@@ -1,0 +1,130 @@
+# Local Airflow + PostgreSQL stack.
+#
+#   cp .env.example .env     # set POSTGRES_PASSWORD and AIRFLOW_DB_PASSWORD
+#   docker compose up -d
+#   docker compose ps        # every service should be "healthy"
+#   open http://localhost:8080
+#
+# One PostgreSQL instance serves two purposes, kept in separate databases:
+#   airflow            Airflow's own metadata
+#   congress_etl       this pipeline's warehouse
+#   congress_etl_test  integration-test target
+# They are created by docker/init-databases.sh on first start.
+#
+# LocalExecutor, not Celery: this is a single-machine stack, so Redis and
+# worker containers would add moving parts without adding capability.
+
+name: airflow-postgres-etl
+
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.11.2-python3.12
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: >-
+      postgresql+psycopg2://airflow:${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env}@postgres:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "false"
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: "60"
+    # The DAG imports the `etl` package from the mounted project directory.
+    PYTHONPATH: /opt/airflow/project
+    # Warehouse connection used by the pipeline itself.
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_DB: congress_etl
+    POSTGRES_USER: etl
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ETL_DATA_DIR: /opt/airflow/project/data
+    ETL_LOOKBACK_CONGRESSES: "1"
+  volumes:
+    # Code is mounted read-only: a task cannot modify the repository.
+    - ./dags:/opt/airflow/dags:ro
+    - ./etl:/opt/airflow/project/etl:ro
+    - ./sql:/opt/airflow/project/sql:ro
+    # Data is writable: this is where downloads and staged CSVs land.
+    - ./data:/opt/airflow/project/data
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD in .env}
+      # Consumed by the init script to create the roles and databases.
+      ETL_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      AIRFLOW_DB_PASSWORD: ${AIRFLOW_DB_PASSWORD:?set AIRFLOW_DB_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs only on first initialisation of an empty data directory.
+      - ./docker/init-databases.sh:/docker-entrypoint-initdb.d/10-init-databases.sh:ro
+    ports:
+      # Exposed so psql and the test suite can reach it from the host.
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      # Everything else waits on this, which is why the stack comes up in a
+      # deterministic order instead of racing and restarting.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    # Runs to completion, then exits. The long-lived services wait for it.
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        set -euo pipefail
+        airflow db migrate
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env}" \
+          --firstname Admin --lastname User --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL:-admin@example.com}" \
+          || echo "admin user already exists; continuing"
+    restart: "no"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname \"$${HOSTNAME}\""]
+      interval: 20s
+      timeout: 20s
+      retries: 6
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  airflow-logs:
