@@ -1,0 +1,4 @@
+congress,start_date,chamber,state_abbrev,party_code,bioname,bioguide_id,birthday,cmltv_cong,cmltv_chamber,age_days,age_years,generation
+66,1919-05-19,House,NY,200,"DOE, John","D000001",1870-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,Senate,CA,100,"ROE, Jane","R000001",1860-06-15,1,1,21523,58.900000,"Lost"
+66,1919-05-19,House,NY,200,"DOE, John","D000001",1870-01-01,1,1,18035,99.900000,"Lost"

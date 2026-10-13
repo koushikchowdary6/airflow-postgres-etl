@@ -1,0 +1,10 @@
+congress,start_date,chamber,state_abbrev,party_code,bioname,bioguide_id,birthday,cmltv_cong,cmltv_chamber,age_days,age_years,generation
+notanumber,1919-05-19,House,NY,200,"BAD, Congress","B000001",1870-01-01,1,1,18035,49.300000,"Lost"
+66,not-a-date,House,NY,200,"BAD, Date","B000002",1870-01-01,1,1,18035,49.300000,"Lost"
+66,2099-01-01,House,NY,200,"BAD, Future","B000003",1870-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,Assembly,NY,200,"BAD, Chamber","B000004",1870-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,House,XYZ,200,"BAD, State","B000005",1870-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,House,NY,200,"BAD, Age","B000006",1870-01-01,1,1,18035,200.000000,"Lost"
+66,1919-05-19,House,NY,200,"BAD, NoId","",1870-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,House,NY,200,"BAD, Birthday","B000008",1950-01-01,1,1,18035,49.300000,"Lost"
+66,1919-05-19,House,NY,200,"GOOD, Row","G000001",1870-01-01,1,1,18035,49.300000,"Lost"

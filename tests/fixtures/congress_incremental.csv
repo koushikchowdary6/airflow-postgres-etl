@@ -1,0 +1,4 @@
+congress,start_date,chamber,state_abbrev,party_code,bioname,bioguide_id,birthday,cmltv_cong,cmltv_chamber,age_days,age_years,generation
+67,1921-03-04,Senate,TX,100,"POE, Sam","P000001",1875-03-02,1,1,16803,46.500000,"Lost"
+68,1923-03-04,House,NY,200,"DOE, John","D000001",1870-01-01,3,3,19418,53.200000,"Lost"
+68,1923-03-04,Senate,CA,100,"NEW, Member","N000001",1880-07-04,1,1,15584,42.700000,"Lost"
