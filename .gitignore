@@ -1,0 +1,45 @@
+# ---- Credentials and configuration (never commit) --------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.yaml
+
+# ---- Pipeline data (downloaded or generated; reproducible) ------------------
+# Test fixtures live under tests/fixtures/ and ARE committed.
+data/
+*.csv.gz
+
+# ---- Airflow ----------------------------------------------------------------
+# Local Airflow home, metadata DB and logs, if Airflow is run outside Docker.
+airflow.cfg
+airflow.db
+airflow-webserver.pid
+webserver_config.py
+logs/
+standalone_admin_password.txt
+
+# ---- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+result.txt
+
+# ---- Editors and OS ---------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+.DS_Store

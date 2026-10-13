@@ -1,0 +1,9 @@
+# Runtime dependencies of the etl package.
+#
+# Airflow is deliberately NOT listed here: it is the orchestrator, supplied by
+# the Docker image (see docker-compose.yml), not a library this package imports.
+# Keeping it out means the ETL can be run and tested without installing
+# Airflow's large dependency tree.
+
+psycopg2-binary==2.9.13
+requests==2.32.3

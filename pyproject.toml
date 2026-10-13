@@ -1,0 +1,29 @@
+[project]
+name = "airflow-postgres-etl"
+version = "0.1.0"
+description = "Incremental, idempotent batch ETL of congressional demographics into PostgreSQL, orchestrated by Airflow"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+# The DAG file is exempt from a couple of rules that fight Airflow's idioms.
+extend-exclude = []
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM", "PL", "RET", "ARG"]
+ignore = [
+    "PLR0913", # several step functions legitimately take several keyword args
+    "PLR2004", # magic values are fine in assertions
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests import inside a test body to scope a symbol to one case.
+"tests/*" = ["ARG001", "ARG002", "ARG005", "PLR2004", "PLC0415"]
+# Airflow tasks must import lazily so the scheduler's repeated parse stays cheap.
+"dags/*" = ["PLC0415"]
