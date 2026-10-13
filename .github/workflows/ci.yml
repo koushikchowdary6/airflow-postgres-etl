@@ -1,0 +1,206 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: ruff check
+        run: ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: ruff format --check .
+
+      - name: Validate docker-compose.yml
+        env:
+          POSTGRES_PASSWORD: ci-not-a-real-password
+          POSTGRES_SUPERUSER_PASSWORD: ci-not-a-real-password
+          AIRFLOW_DB_PASSWORD: ci-not-a-real-password
+          AIRFLOW_ADMIN_PASSWORD: ci-not-a-real-password
+        run: docker compose config --quiet
+
+      - name: Shell-check the database init script
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck docker/init-databases.sh
+
+  test:
+    # Unit tests plus the real integration tests. A service container gives CI
+    # an actual PostgreSQL, so the SQL - the upsert, the constraints, the
+    # quality checks - is exercised rather than mocked.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: etl
+          POSTGRES_PASSWORD: ci-not-a-real-password
+          POSTGRES_DB: congress_etl_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U etl -d congress_etl_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: congress_etl_test
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: ci-not-a-real-password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Create the schema
+        run: python -m etl.cli init-db
+
+      - name: Run tests
+        run: pytest -v
+
+      - name: Assert the integration tests were not silently skipped
+        # The suite skips integration tests when no database is reachable,
+        # which is right locally and wrong in CI: a misconfigured service
+        # container would otherwise look like a green build.
+        run: |
+          pytest -q 2>&1 | tee result.txt
+          if grep -qE "[0-9]+ skipped" result.txt; then
+            echo "::error::Tests were skipped in CI; the PostgreSQL service container is likely misconfigured."
+            exit 1
+          fi
+
+  pipeline-smoke-test:
+    # Runs the pipeline end to end against fixture data, twice, and asserts the
+    # second run changed nothing. This is the check that would catch an
+    # idempotency regression that unit tests miss.
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: etl
+          POSTGRES_PASSWORD: ci-not-a-real-password
+          POSTGRES_DB: congress_etl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U etl -d congress_etl"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: congress_etl
+      POSTGRES_USER: etl
+      POSTGRES_PASSWORD: ci-not-a-real-password
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Seed fixture data as the source file
+        run: |
+          mkdir -p data/raw
+          cp tests/fixtures/congress_clean.csv data/raw/aging_congress.csv
+
+      - name: First run
+        run: python -m etl.cli run --offline
+
+      - name: Second run must change nothing
+        run: |
+          python - <<'PY'
+          from etl.config import Config
+          from etl.db import transaction
+          from etl.load import fact_fingerprint
+          from etl.pipeline import run_all
+
+          config = Config.from_env()
+          with transaction(config) as cursor:
+              before = fact_fingerprint(cursor)
+          summary = run_all(config, offline=True)
+          with transaction(config) as cursor:
+              after = fact_fingerprint(cursor)
+
+          print(f"inserted={summary['rows_inserted']} updated={summary['rows_updated']} "
+                f"unchanged={summary['rows_unchanged']}")
+          assert summary["rows_inserted"] == 0, "a rerun inserted rows"
+          assert summary["rows_updated"] == 0, "a rerun updated rows"
+          assert before == after, "a rerun changed the warehouse"
+          print("idempotency verified: fingerprint unchanged")
+          PY
+
+      - name: Full refresh must also change nothing
+        run: python -m etl.cli run --offline --full-refresh
+
+      - name: Data-quality checks must pass
+        run: python -m etl.cli quality
+
+  dag-integrity:
+    # Airflow is a heavy install, so it gets its own job rather than being
+    # added to every test matrix entry.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Airflow with the official constraints
+        run: |
+          pip install -r requirements.txt
+          pip install pytest==9.1.1
+          pip install "apache-airflow==2.11.2" \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.11.2/constraints-3.12.txt"
+
+      - name: Verify the DAG imports and its structure
+        env:
+          AIRFLOW_HOME: ${{ runner.temp }}/airflow
+          AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+        # Airflow 2.11 emits RemovedInAirflow3Warning on import, which this
+        # project otherwise promotes to an error.
+        run: pytest tests/test_dag.py -v -W "ignore::DeprecationWarning"
