@@ -23,7 +23,7 @@ could not be verified, it says so rather than being omitted.
 | DAG executed end to end | `airflow dags test` | **all 7 tasks SUCCESS, DagRun success** |
 | Idempotency through Airflow | `airflow dags test` twice | **fingerprint unchanged** |
 | Full Docker Compose stack | `docker compose up` | **not run** — see below |
-| CI (GitHub Actions) | — | **status unknown** — workflows committed but not yet run |
+| CI (GitHub Actions) | GitHub-hosted runners | **passes** — lint, integration tests on a real PostgreSQL service container, pipeline smoke test, DAG integrity |
 
 ### What "not run" means for Docker
 
@@ -235,8 +235,9 @@ the rerun.)
    behaviour on failure are therefore unproven.
 3. **Retries were never observed firing.** They are configured and asserted in
    tests; no task was made to fail transiently to watch a retry happen.
-4. **GitHub Actions status is unknown**: the workflows are committed but had
-   not run at the time of writing.
+4. ~~GitHub Actions status is unknown.~~ **Resolved.** The `ci` workflow runs
+   on every push and passes, including the integration tests against a real
+   PostgreSQL service container and the two-run idempotency smoke test.
 5. **Scale is untested.** 29,120 rows is small. Nothing here establishes
    behaviour at millions of rows; see the README's limitations.
 6. **Concurrency is untested.** `max_active_runs=1` prevents overlap by

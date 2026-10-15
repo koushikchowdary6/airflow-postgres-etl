@@ -114,6 +114,7 @@ make test         # 133 tests (needs a database named *test*)
 | Re-process all rows | PostgreSQL 16.15 | **0 inserted, 0 updated, fingerprint identical** |
 | DAG end to end | `airflow dags test` | **7/7 tasks SUCCESS** |
 | `docker compose up` | — | **not run** (no daemon) |
+| CI on GitHub Actions | GitHub runners | **passes** (incl. PostgreSQL integration tests) |
 | Airflow scheduler | — | **not run** |
 
 ## Data model
