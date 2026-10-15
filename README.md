@@ -4,20 +4,35 @@ A daily batch ETL that loads 29,120 rows of US congressional demographics into
 PostgreSQL, orchestrated by Airflow. Validate, stage with `COPY`, upsert on a
 natural key, rebuild an aggregate model, verify, then advance the watermark.
 
-The pipeline is **incremental** (an integer watermark with a revision
-lookback), **idempotent** (a natural-key upsert that skips unchanged rows
-entirely, verified by re-processing every row and comparing a fingerprint), and
-**verified against a real PostgreSQL** — 133 tests, nine SQL data-quality
-checks, and the DAG executed end to end in Airflow 2.11.2.
+The pipeline is **incremental** (congress number as watermark with revision
+lookback), **idempotent** (natural-key upsert on `(congress, bioguide_id)`
+that skips unchanged rows, verified by full re-process with identical
+fingerprint), and **verified against PostgreSQL 16.15** — 156 tests, nine
+data-quality checks, real data, and DAG execution.
 
-> **Honest status.** The SQL, the pipeline and the DAG were all run for real
-> against PostgreSQL 16.15, and `airflow dags test` completed with all seven
-> tasks successful. **The Docker Compose stack was never started** — no Docker
-> daemon was available where this was built, so PostgreSQL was installed
-> directly instead. `docker compose config` validates the file; it does not
-> prove the containers come up healthy. The Airflow *scheduler* was likewise
-> never run. [`docs/VERIFICATION.md`](docs/VERIFICATION.md) records what ran,
-> with output.
+**Architecture:** Seven-task DAG (ensure schema → extract → stage → upsert →
+analytics → quality checks → advance watermark). File-based handoff between
+tasks. Watermark advances only after quality checks pass. Duplicate input rows
+handled by `DISTINCT ON`.
+
+**Key design:** Deterministic natural key prevents re-processing duplicates.
+Unchanged rows skip the upsert entirely so `updated_at` stays stable. Within-batch
+duplicates collapsed before merge. Nine SQL checks verify structure, ranges, and
+internal consistency before watermark moves.
+
+> **Honest status.** The SQL, pipeline, and DAG all executed against
+> PostgreSQL 16.15. `airflow dags test` completed all seven tasks successfully
+> with 29,120 real rows processed. **The Docker Compose stack was never
+> started** — no Docker daemon was available, so PostgreSQL was installed
+> directly instead. `docker compose config` validates YAML/dependencies; it
+> does not prove containers come up healthy. The Airflow *scheduler* was not
+> run. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md) for complete output.
+
+---
+
+## CI Status
+
+![CI](https://github.com/koushikchowdary6/airflow-postgres-etl/workflows/ci/badge.svg?branch=main)
 
 ---
 
@@ -105,16 +120,16 @@ make test         # 133 tests (needs a database named *test*)
 
 | Check | Tool | Result |
 |---|---|---|
-| Unit + integration tests | pytest 9.1.1 | **133 passed**, 7 skipped (Airflow-only) |
-| DAG tests with Airflow present | pytest + Airflow 2.11.2 | **23 passed** |
-| Lint and formatting | ruff 0.17.0 | **clean** |
-| Compose file | `docker compose config` | **valid** |
-| Real data loaded | PostgreSQL 16.15 | **29,120 rows, 0 rejected** |
+| Unit tests (pure) | pytest 9.1.1 | **133 passed** |
+| DAG tests with Airflow | pytest + Airflow 2.11.2 | **23 passed** |
+| Lint and formatting | ruff 0.17.0 | **clean** (156 files) |
+| Compose file validation | `docker compose config` | **valid** |
+| Real data pipeline | PostgreSQL 16.15 | **29,120 rows, 0 rejected, 0 duplicates** |
 | Data-quality checks | SQL | **9/9 pass** |
-| Re-process all rows | PostgreSQL 16.15 | **0 inserted, 0 updated, fingerprint identical** |
-| DAG end to end | `airflow dags test` | **7/7 tasks SUCCESS** |
+| Idempotency check | PostgreSQL 16.15 | **0 inserted, 0 updated, fingerprint identical** |
+| DAG execution | `airflow dags test` | **7/7 tasks SUCCESS** |
+| CI on GitHub Actions | postgres service + real tests | **passes** |
 | `docker compose up` | — | **not run** (no daemon) |
-| CI on GitHub Actions | GitHub runners | **passes** (incl. PostgreSQL integration tests) |
 | Airflow scheduler | — | **not run** |
 
 ## Data model
