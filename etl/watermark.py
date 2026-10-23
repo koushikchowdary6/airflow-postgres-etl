@@ -43,20 +43,38 @@ def set_watermark(cursor: psycopg2.extensions.cursor, pipeline_name: str, last_c
 
 
 def advance_watermark(cursor: psycopg2.extensions.cursor, pipeline_name: str, candidate: int) -> bool:
-    """Move the watermark forward only. Returns True if it moved.
+    """Atomically move the watermark forward. Returns True if it moved.
 
-    Monotonic by design: a re-run over older data must not rewind the position
-    and cause the next run to re-process everything.
+    A read-then-write check is unsafe under concurrent workers: two workers
+    can both read the old watermark and the slower, lower candidate can
+    overwrite a newer position. PostgreSQL's conflict update locks the row
+    and rechecks the predicate against the latest committed value.
     """
-    current = get_watermark(cursor, pipeline_name)
-    if current is not None and candidate <= current:
+    cursor.execute(
+        """
+        INSERT INTO etl.watermark (pipeline_name, last_congress)
+        VALUES (%s, %s)
+        ON CONFLICT (pipeline_name) DO UPDATE SET
+              last_congress = EXCLUDED.last_congress
+            , updated_at = now()
+        WHERE etl.watermark.last_congress < EXCLUDED.last_congress
+        RETURNING last_congress
+        """,
+        (pipeline_name, candidate),
+    )
+    moved = cursor.fetchone() is not None
+    if moved:
+        logger.info("watermark advanced", extra={"pipeline_name": pipeline_name, "candidate": candidate})
+    else:
         logger.info(
             "watermark not advanced",
-            extra={"pipeline_name": pipeline_name, "current": current, "candidate": candidate},
+            extra={
+                "pipeline_name": pipeline_name,
+                "current": get_watermark(cursor, pipeline_name),
+                "candidate": candidate,
+            },
         )
-        return False
-    set_watermark(cursor, pipeline_name, candidate)
-    return True
+    return moved
 
 
 def effective_floor(watermark: int | None, lookback_congresses: int) -> int | None:
@@ -66,8 +84,8 @@ def effective_floor(watermark: int | None, lookback_congresses: int) -> int | No
     re-reads recently loaded Congresses so a late upstream correction is picked
     up; that is only safe because the upsert is keyed on the natural key.
     """
-    if watermark is None:
-        return None
     if lookback_congresses < 0:
         raise ValueError("lookback_congresses must be >= 0")
+    if watermark is None:
+        return None
     return max(1, watermark - lookback_congresses)

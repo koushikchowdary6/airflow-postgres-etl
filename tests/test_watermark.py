@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+import etl.watermark as watermark_module
 from etl.config import PIPELINE_NAME, Config
 from etl.db import transaction
 from etl.watermark import advance_watermark, effective_floor, get_watermark, set_watermark
@@ -25,6 +26,10 @@ class TestEffectiveFloor:
     def test_negative_lookback_is_rejected(self):
         with pytest.raises(ValueError, match="lookback_congresses"):
             effective_floor(118, -1)
+
+    def test_negative_lookback_is_rejected_on_first_run(self):
+        with pytest.raises(ValueError, match="lookback_congresses"):
+            effective_floor(None, -1)
 
 
 class TestWatermarkStore:
@@ -60,6 +65,21 @@ class TestWatermarkStore:
         with transaction(clean_db) as cursor:
             set_watermark(cursor, PIPELINE_NAME, 110)
             assert advance_watermark(cursor, PIPELINE_NAME, 110) is False
+
+    def test_stale_application_read_cannot_rewind_watermark(self, clean_db: Config, monkeypatch):
+        """A concurrent worker may have read 100 before another committed 110."""
+        with transaction(clean_db) as cursor:
+            set_watermark(cursor, PIPELINE_NAME, 110)
+
+        # Simulate an obsolete read in the old read-then-write implementation.
+        # The atomic SQL must use the database's current value, not this hint.
+        with monkeypatch.context() as patch:
+            patch.setattr(watermark_module, "get_watermark", lambda cursor, pipeline_name: 100)
+            with transaction(clean_db) as cursor:
+                assert advance_watermark(cursor, PIPELINE_NAME, 105) is False
+
+        with transaction(clean_db) as cursor:
+            assert get_watermark(cursor, PIPELINE_NAME) == 110
 
     def test_pipelines_are_tracked_independently(self, clean_db: Config):
         with transaction(clean_db) as cursor:
