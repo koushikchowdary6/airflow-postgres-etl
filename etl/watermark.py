@@ -68,7 +68,11 @@ def advance_watermark(cursor: psycopg2.extensions.cursor, pipeline_name: str, ca
     else:
         logger.info(
             "watermark not advanced",
-            extra={"pipeline_name": pipeline_name, "current": get_watermark(cursor, pipeline_name), "candidate": candidate},
+            extra={
+                "pipeline_name": pipeline_name,
+                "current": get_watermark(cursor, pipeline_name),
+                "candidate": candidate,
+            },
         )
     return moved
 
