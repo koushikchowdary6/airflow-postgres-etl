@@ -18,7 +18,7 @@ import pytest
 from etl.config import Config
 from etl.db import connect, transaction
 from etl.load import build_analytics, upsert_fact
-from etl.quality import QualityCheckFailed, enforce, failures, format_table, run_checks
+from etl.quality import QualityCheck, QualityCheckFailed, enforce, failures, format_table, run_checks
 
 from .test_load import stage
 
@@ -185,6 +185,24 @@ class TestEnforcement:
         with caplog.at_level(logging.WARNING):
             enforce(checks, fail_on_error=False)  # must not raise
         assert "configured as warnings" in caplog.text
+
+
+class TestQualitySuiteIntegrity:
+    @pytest.mark.parametrize("fail_on_error", [True, False])
+    def test_empty_suite_cannot_pass_even_in_warning_mode(self, fail_on_error):
+        with pytest.raises(QualityCheckFailed, match="missing checks"):
+            enforce([], fail_on_error=fail_on_error)
+
+    def test_partial_suite_cannot_pass(self):
+        checks = [QualityCheck("fact_table_not_empty", "PASS", 4, "rows")]
+        with pytest.raises(QualityCheckFailed, match="missing checks"):
+            enforce(checks)
+
+    def test_duplicate_check_cannot_mask_missing_or_inflate_coverage(self, loaded: Config):
+        with transaction(loaded) as cursor:
+            checks = run_checks(cursor)
+        with pytest.raises(QualityCheckFailed, match="duplicate checks"):
+            enforce(checks + [checks[0]], fail_on_error=False)
 
 
 class TestReporting:
