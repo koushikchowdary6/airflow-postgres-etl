@@ -165,12 +165,21 @@ def step_quality(config: Config, *, batch_id: str) -> dict[str, Any]:
     }
 
 
-def step_advance_watermark(config: Config, *, batch_id: str, max_congress: int | None) -> dict[str, Any]:
-    """Advance the watermark and close out the batch.
+def step_advance_watermark(
+    config: Config, *, batch_id: str, max_congress: int | None, quality_passed: bool
+) -> dict[str, Any]:
+    """Advance the watermark only after verified passing quality checks.
 
-    Runs only after the quality checks pass, so a failed run is retried from
-    the same position instead of silently skipping data.
+    Warning-only quality mode may return failed checks without raising. Never
+    mark that batch successful or advance its watermark: doing so would skip
+    the affected source records on the next incremental run.
     """
+    if quality_passed is not True:
+        message = "Data-quality checks did not pass; watermark held back"
+        with transaction(config) as cursor:
+            finish_batch(cursor, batch_id, "failed", error_message=message)
+        raise QualityCheckFailed(message)
+
     moved = False
     with transaction(config) as cursor:
         if max_congress is not None:
@@ -196,7 +205,10 @@ def run_all(
         upserted = step_upsert(config, batch_id=batch_id)
         analytics = step_build_analytics(config)
         quality = step_quality(config, batch_id=batch_id)
-        advanced = step_advance_watermark(config, batch_id=batch_id, max_congress=extracted["max_congress"])
+        advanced = step_advance_watermark(
+            config, batch_id=batch_id, max_congress=extracted["max_congress"],
+            quality_passed=quality["all_passed"],
+        )
     except Exception as exc:
         # Record the failure against the batch before propagating, so the audit
         # table reflects reality even when the run dies.
