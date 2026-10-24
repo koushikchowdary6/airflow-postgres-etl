@@ -126,7 +126,7 @@ def congress_demographics_etl() -> None:
         return step_quality(Config.from_env(), batch_id=extracted["batch_id"])
 
     @task
-    def advance_watermark(extracted: dict, _quality: dict) -> dict:
+    def advance_watermark(extracted: dict, quality: dict) -> dict:
         """Advance the watermark and mark the batch succeeded."""
         from etl.config import Config
         from etl.pipeline import step_advance_watermark
@@ -135,6 +135,7 @@ def congress_demographics_etl() -> None:
             Config.from_env(),
             batch_id=extracted["batch_id"],
             max_congress=extracted["max_congress"],
+            quality_passed=quality["all_passed"],
         )
 
     schema = ensure_schema()
