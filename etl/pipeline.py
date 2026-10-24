@@ -206,7 +206,9 @@ def run_all(
         analytics = step_build_analytics(config)
         quality = step_quality(config, batch_id=batch_id)
         advanced = step_advance_watermark(
-            config, batch_id=batch_id, max_congress=extracted["max_congress"],
+            config,
+            batch_id=batch_id,
+            max_congress=extracted["max_congress"],
             quality_passed=quality["all_passed"],
         )
     except Exception as exc:
