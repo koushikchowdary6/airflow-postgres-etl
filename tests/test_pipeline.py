@@ -6,8 +6,8 @@ duplicate input, malformed input, partial failure and restart.
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import replace
+import shutil
 
 import pytest
 
