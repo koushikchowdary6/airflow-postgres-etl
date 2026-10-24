@@ -19,17 +19,19 @@ logger = get_logger(__name__)
 # This is the required contract of sql/004_quality.sql. A partially deployed
 # or accidentally edited suite must never look green simply because the
 # remaining checks happen to pass (in particular, all([]) is True).
-REQUIRED_QUALITY_CHECKS = frozenset({
-    "age_years_within_range",
-    "all_staged_rows_loaded",
-    "birthday_precedes_start_date",
-    "chamber_values_valid",
-    "fact_table_not_empty",
-    "natural_key_is_unique",
-    "no_future_start_dates",
-    "staged_values_match_fact",
-    "summary_reconciles_with_fact",
-})
+REQUIRED_QUALITY_CHECKS = frozenset(
+    {
+        "age_years_within_range",
+        "all_staged_rows_loaded",
+        "birthday_precedes_start_date",
+        "chamber_values_valid",
+        "fact_table_not_empty",
+        "natural_key_is_unique",
+        "no_future_start_dates",
+        "staged_values_match_fact",
+        "summary_reconciles_with_fact",
+    }
+)
 
 
 class QualityCheckFailed(RuntimeError):
@@ -94,8 +96,7 @@ def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
         if duplicates:
             problems.append(f"duplicate checks: {', '.join(sorted(duplicates))}")
         raise QualityCheckFailed(
-            "Data-quality suite integrity failure (" + "; ".join(problems) + "); "
-            "watermark must not advance."
+            "Data-quality suite integrity failure (" + "; ".join(problems) + "); watermark must not advance."
         )
 
     bad = failures(checks)
