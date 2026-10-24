@@ -258,6 +258,7 @@ class TestConcurrencyGuard:
             staged_keys = cursor.fetchone()[0]
             assert fact_row_count(cursor) == staged_keys
 
+
 def test_missing_quality_suite_never_advances_watermark(etl_env: Config, monkeypatch):
     """An empty SQL check result must fail the batch, not count as all-pass."""
     monkeypatch.setattr("etl.pipeline.run_checks", lambda cursor: [])
