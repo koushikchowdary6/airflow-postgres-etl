@@ -76,7 +76,10 @@ flowchart TD
 Two details that matter more than the box count:
 
 - **The watermark advances last**, only after the quality checks pass. A failed
-  run is retried from the same position rather than skipping data.
+  run is retried from the same position rather than skipping data. Even when
+  `ETL_FAIL_ON_QUALITY_ERROR=false` logs failed checks as warnings, the final
+  watermark task fails closed and records a failed batch instead of certifying
+  unverified data.
 - **Tasks hand off a file plus a batch id, not memory.** Airflow runs each task
   in its own process, so validated rows are written to a staged CSV that the
   load task `COPY`s. The file also survives as a debugging artefact.
