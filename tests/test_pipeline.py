@@ -214,7 +214,6 @@ class TestPartialFailureAndRecovery:
             cursor.execute("SELECT COUNT(*) FROM staging.member_term_stage")
             assert cursor.fetchone()[0] == summary["rows_staged"] == 4
 
-
     def test_warning_only_quality_failure_does_not_commit_watermark(self, etl_env: Config):
         """Logging quality failures must never certify an unverified batch."""
         run_all(etl_env, offline=True)
@@ -225,7 +224,8 @@ class TestPartialFailureAndRecovery:
         warning_config = replace(etl_env, fail_on_quality_error=False)
         extracted = step_extract(warning_config, offline=True)
         step_load_staging(
-            warning_config, batch_id=extracted["batch_id"],
+            warning_config,
+            batch_id=extracted["batch_id"],
             staged_path=extracted["staged_path"],
         )
         step_upsert(warning_config, batch_id=extracted["batch_id"])
@@ -235,7 +235,8 @@ class TestPartialFailureAndRecovery:
 
         with pytest.raises(QualityCheckFailed, match="watermark held back"):
             step_advance_watermark(
-                warning_config, batch_id=extracted["batch_id"],
+                warning_config,
+                batch_id=extracted["batch_id"],
                 max_congress=extracted["max_congress"],
                 quality_passed=quality["all_passed"],
             )
