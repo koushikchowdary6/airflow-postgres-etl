@@ -7,13 +7,17 @@ duplicate input, malformed input, partial failure and restart.
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 
 import pytest
 
 from etl.config import PIPELINE_NAME, Config
 from etl.db import transaction
 from etl.load import fact_fingerprint, fact_row_count
-from etl.pipeline import run_all, step_extract, step_load_staging, step_quality, step_upsert
+from etl.pipeline import (
+    run_all, step_advance_watermark, step_extract, step_load_staging,
+    step_quality, step_upsert,
+)
 from etl.quality import QualityCheckFailed
 from etl.watermark import get_watermark
 
@@ -205,6 +209,40 @@ class TestPartialFailureAndRecovery:
         with transaction(etl_env) as cursor:
             cursor.execute("SELECT COUNT(*) FROM staging.member_term_stage")
             assert cursor.fetchone()[0] == summary["rows_staged"] == 4
+
+
+    def test_warning_only_quality_failure_does_not_commit_watermark(self, etl_env: Config):
+        """Logging quality failures must never certify an unverified batch."""
+        run_all(etl_env, offline=True)
+        with transaction(etl_env) as cursor:
+            previous = get_watermark(cursor, PIPELINE_NAME)
+
+        seed(etl_env, "congress_incremental.csv")
+        warning_config = replace(etl_env, fail_on_quality_error=False)
+        extracted = step_extract(warning_config, offline=True)
+        step_load_staging(
+            warning_config, batch_id=extracted["batch_id"],
+            staged_path=extracted["staged_path"],
+        )
+        step_upsert(warning_config, batch_id=extracted["batch_id"])
+        # The aggregate was deliberately not rebuilt: reconciliation fails.
+        quality = step_quality(warning_config, batch_id=extracted["batch_id"])
+        assert quality["all_passed"] is False
+
+        with pytest.raises(QualityCheckFailed, match="watermark held back"):
+            step_advance_watermark(
+                warning_config, batch_id=extracted["batch_id"],
+                max_congress=extracted["max_congress"],
+                quality_passed=quality["all_passed"],
+            )
+
+        with transaction(etl_env) as cursor:
+            assert get_watermark(cursor, PIPELINE_NAME) == previous
+            cursor.execute(
+                "SELECT status FROM etl.batch_run WHERE batch_id = %s",
+                (extracted["batch_id"],),
+            )
+            assert cursor.fetchone()[0] == "failed"
 
 
 class TestConcurrencyGuard:
