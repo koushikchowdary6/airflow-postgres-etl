@@ -6,8 +6,8 @@ duplicate input, malformed input, partial failure and restart.
 
 from __future__ import annotations
 
-from dataclasses import replace
 import shutil
+from dataclasses import replace
 
 import pytest
 
@@ -15,8 +15,12 @@ from etl.config import PIPELINE_NAME, Config
 from etl.db import transaction
 from etl.load import fact_fingerprint, fact_row_count
 from etl.pipeline import (
-    run_all, step_advance_watermark, step_extract, step_load_staging,
-    step_quality, step_upsert,
+    run_all,
+    step_advance_watermark,
+    step_extract,
+    step_load_staging,
+    step_quality,
+    step_upsert,
 )
 from etl.quality import QualityCheckFailed
 from etl.watermark import get_watermark
