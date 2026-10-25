@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import Mock
 
 import psycopg2
 import pytest
@@ -25,6 +26,7 @@ from etl.load import (
     upsert_fact,
     write_staged_csv,
 )
+from etl.schema import STAGE_COLUMNS, SchemaError
 from etl.source import AGING_CONGRESS
 
 from .conftest import FIXTURE_DIR, TODAY
@@ -57,6 +59,44 @@ class TestCopyIntoStaging:
     def test_missing_staged_file_raises_an_actionable_error(self, clean_db: Config, tmp_path: Path):
         with transaction(clean_db) as cursor, pytest.raises(FileNotFoundError, match="Re-run the extract step"):
             copy_staged_csv(cursor, tmp_path / "does_not_exist.csv")
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        list(STAGE_COLUMNS[1:2] + STAGE_COLUMNS[:1] + STAGE_COLUMNS[2:]),
+        list(STAGE_COLUMNS[:-1]),
+        [*STAGE_COLUMNS, "unexpected"],
+        [*STAGE_COLUMNS[:-1], STAGE_COLUMNS[0]],
+        [],
+    ],
+)
+def test_copy_rejects_corrupt_staged_headers_before_sql(tmp_path: Path, header: list[str]):
+    path = tmp_path / "tampered.csv"
+    path.write_text(",".join(header) + "\n", encoding="utf-8")
+    cursor = Mock()
+    with pytest.raises(SchemaError, match="staged CSV header"):
+        copy_staged_csv(cursor, path)
+    cursor.copy_expert.assert_not_called()
+    cursor.execute.assert_not_called()
+
+
+def test_copy_rejects_headerless_staged_file(tmp_path: Path):
+    path = tmp_path / "no-header.csv"
+    path.write_text("", encoding="utf-8")
+    cursor = Mock()
+    with pytest.raises(SchemaError, match="staged CSV header"):
+        copy_staged_csv(cursor, path)
+    cursor.copy_expert.assert_not_called()
+
+
+def test_copy_allows_header_only_staged_file(tmp_path: Path):
+    path = tmp_path / "empty-batch.csv"
+    path.write_text(",".join(STAGE_COLUMNS) + "\n", encoding="utf-8")
+    cursor = Mock()
+    cursor.fetchone.return_value = (0,)
+    assert copy_staged_csv(cursor, path) == 0
+    cursor.copy_expert.assert_called_once()
 
 
 class TestUpsert:
