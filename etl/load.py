@@ -12,7 +12,7 @@ import psycopg2.extras
 
 from .db import read_sql
 from .logging_setup import get_logger
-from .schema import STAGE_COLUMNS, MemberTerm, RejectedRow
+from .schema import STAGE_COLUMNS, MemberTerm, RejectedRow, SchemaError
 
 logger = get_logger(__name__)
 
@@ -55,7 +55,14 @@ def copy_staged_csv(cursor: psycopg2.extensions.cursor, source: Path) -> int:
             f"ETL_DATA_DIR/staged/<batch_id>.csv."
         )
     columns = ", ".join(STAGE_COLUMNS)
-    with source.open("r", encoding="utf-8") as handle:
+    with source.open("r", encoding="utf-8", newline="") as handle:
+        # PostgreSQL's HEADER true skips the first row without checking its
+        # names. A swapped or duplicated staged column could silently load
+        # values into the wrong warehouse fields on an Airflow task retry.
+        header = next(csv.reader(handle), None)
+        if header != list(STAGE_COLUMNS):
+            raise SchemaError("staged CSV header does not match the expected column order; re-run extraction")
+        handle.seek(0)
         cursor.copy_expert(
             f"COPY staging.member_term_stage ({columns}) FROM STDIN WITH (FORMAT csv, HEADER true)",
             handle,
