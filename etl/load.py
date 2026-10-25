@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import os
+import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -25,11 +27,22 @@ def write_staged_csv(records: Sequence[MemberTerm], destination: Path) -> Path:
     memory. The file doubles as an artefact for debugging a failed load.
     """
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(STAGE_COLUMNS)
-        for record in records:
-            writer.writerow(record.as_row())
+    # Extract and load run in separate processes. Never expose a partially
+    # written CSV to COPY, or destroy a valid staged batch on a failed retry.
+    # Unique sibling files also prevent concurrent writers sharing a temp path.
+    fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(STAGE_COLUMNS)
+            for record in records:
+                writer.writerow(record.as_row())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     logger.info("wrote staged csv", extra={"path": str(destination), "rows": len(records)})
     return destination
 

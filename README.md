@@ -82,7 +82,9 @@ Two details that matter more than the box count:
   unverified data.
 - **Tasks hand off a file plus a batch id, not memory.** Airflow runs each task
   in its own process, so validated rows are written to a staged CSV that the
-  load task `COPY`s. The file also survives as a debugging artefact.
+  load task `COPY`s. The CSV is published with an atomic rename so a failed
+  write cannot expose a partial batch or overwrite a valid staged file. The
+  file also survives as a debugging artefact.
 
 ## Quickstart
 
