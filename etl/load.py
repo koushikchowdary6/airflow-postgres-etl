@@ -30,9 +30,7 @@ def write_staged_csv(records: Sequence[MemberTerm], destination: Path) -> Path:
     # Extract and load run in separate processes. Never expose a partially
     # written CSV to COPY, or destroy a valid staged batch on a failed retry.
     # Unique sibling files also prevent concurrent writers sharing a temp path.
-    fd, temporary = tempfile.mkstemp(
-        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
-    )
+    fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
             writer = csv.writer(handle)
