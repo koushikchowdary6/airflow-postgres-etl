@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-import etl.source as source
+from etl import source
 
 
 @pytest.fixture
@@ -80,10 +80,31 @@ def test_failed_download_does_not_publish_new_snapshot(
 ):
     target = tmp_path / "data.csv"
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\n"))
-    monkeypatch.setattr(source.os, "replace", lambda src, dst: (_ for _ in ()).throw(OSError("disk failure")))
+    def fail_replace(src, dst):
+        raise OSError("disk failure")
+
+    monkeypatch.setattr(source.os, "replace", fail_replace)
 
     with pytest.raises(OSError, match="disk failure"):
         source.fetch(source_spec, target)
 
     assert not target.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_failed_sync_preserves_previous_snapshot_and_cleans_up(
+    tmp_path: Path, monkeypatch, source_spec
+):
+    target = tmp_path / "data.csv"
+    target.write_bytes(b"old\\n")
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\\n"))
+
+    def fail_sync(fd):
+        raise OSError("simulated sync failure")
+
+    monkeypatch.setattr(source.os, "fsync", fail_sync)
+    with pytest.raises(OSError, match="simulated sync failure"):
+        source.fetch(source_spec, target)
+
+    assert target.read_bytes() == b"old\\n"
     assert not list(tmp_path.glob("*.tmp"))
