@@ -108,16 +108,14 @@ def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
     # check is the sole inverse predicate: it passes when count > 0.
     contradictory = []
     for check in checks:
-        expected_pass = (
-            check.observed > 0 if check.check_name == "fact_table_not_empty"
-            else check.observed == 0
-        )
+        expected_pass = check.observed > 0 if check.check_name == "fact_table_not_empty" else check.observed == 0
         if check.observed < 0 or check.passed != expected_pass:
             contradictory.append(check.check_name)
     if contradictory:
         raise QualityCheckFailed(
             "Data-quality suite integrity failure (status/count mismatch: "
-            + ", ".join(sorted(contradictory)) + "); watermark must not advance."
+            + ", ".join(sorted(contradictory))
+            + "); watermark must not advance."
         )
 
     bad = failures(checks)
