@@ -25,9 +25,7 @@ def _fake_response(payload: bytes):
     return SimpleNamespace(content=payload, raise_for_status=lambda: None)
 
 
-def test_successful_download_atomically_replaces_existing_source(
-    tmp_path: Path, monkeypatch, source_spec
-):
+def test_successful_download_atomically_replaces_existing_source(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "nested" / "data.csv"
     target.parent.mkdir()
     target.write_bytes(b"previous,valid,snapshot\n")
@@ -38,9 +36,7 @@ def test_successful_download_atomically_replaces_existing_source(
     assert not list(target.parent.glob("*.tmp"))
 
 
-def test_failed_atomic_replace_preserves_last_good_source(
-    tmp_path: Path, monkeypatch, source_spec
-):
+def test_failed_atomic_replace_preserves_last_good_source(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"old\n")
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\n"))
@@ -58,9 +54,7 @@ def test_failed_atomic_replace_preserves_last_good_source(
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_failed_download_does_not_touch_existing_snapshot(
-    tmp_path: Path, monkeypatch, source_spec
-):
+def test_failed_download_does_not_touch_existing_snapshot(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"old\n")
 
@@ -75,11 +69,10 @@ def test_failed_download_does_not_touch_existing_snapshot(
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_failed_download_does_not_publish_new_snapshot(
-    tmp_path: Path, monkeypatch, source_spec
-):
+def test_failed_download_does_not_publish_new_snapshot(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\n"))
+
     def fail_replace(src, dst):
         raise OSError("disk failure")
 
@@ -92,9 +85,7 @@ def test_failed_download_does_not_publish_new_snapshot(
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_failed_sync_preserves_previous_snapshot_and_cleans_up(
-    tmp_path: Path, monkeypatch, source_spec
-):
+def test_failed_sync_preserves_previous_snapshot_and_cleans_up(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"old\\n")
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\\n"))
