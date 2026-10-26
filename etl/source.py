@@ -18,6 +18,8 @@ Why this dataset suits an incremental ETL:
 
 from __future__ import annotations
 
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,7 +83,26 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             f"If this host has no outbound network access, download the file manually to "
             f"{destination} and re-run with --offline. See docs/DATASETS.md."
         ) from exc
-    destination.write_bytes(response.content)
+    # Publish only a fully written download. A disk error or interrupted
+    # replacement must not truncate the last known-good raw source: an
+    # incremental rerun may need that snapshot for recovery.
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(response.content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     logger.info(
         "fetched source",
         extra={"source": spec.name, "bytes": len(response.content), "path": str(destination)},
