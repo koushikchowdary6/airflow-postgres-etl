@@ -89,14 +89,33 @@ def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
             duplicates.add(name)
         seen.add(name)
     missing = REQUIRED_QUALITY_CHECKS - seen
-    if missing or duplicates:
+    unexpected = seen - REQUIRED_QUALITY_CHECKS
+    if missing or duplicates or unexpected:
         problems = []
         if missing:
             problems.append(f"missing checks: {', '.join(sorted(missing))}")
         if duplicates:
             problems.append(f"duplicate checks: {', '.join(sorted(duplicates))}")
+        if unexpected:
+            problems.append(f"unexpected checks: {', '.join(sorted(unexpected))}")
         raise QualityCheckFailed(
             "Data-quality suite integrity failure (" + "; ".join(problems) + "); watermark must not advance."
+        )
+
+    # SQL returns an observed count as well as a PASS/FAIL label. A changed
+    # query that returns PASS alongside offending rows must not silently
+    # advance the watermark, even in warning mode. The non-empty fact-table
+    # check is the sole inverse predicate: it passes when count > 0.
+    contradictory = []
+    for check in checks:
+        expected_pass = check.observed > 0 if check.check_name == "fact_table_not_empty" else check.observed == 0
+        if check.observed < 0 or check.passed != expected_pass:
+            contradictory.append(check.check_name)
+    if contradictory:
+        raise QualityCheckFailed(
+            "Data-quality suite integrity failure (status/count mismatch: "
+            + ", ".join(sorted(contradictory))
+            + "); watermark must not advance."
         )
 
     bad = failures(checks)
