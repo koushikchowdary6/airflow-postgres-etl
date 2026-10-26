@@ -36,14 +36,8 @@ def test_unknown_quality_check_fails_closed_even_in_warning_mode(fail_on_error):
     ],
 )
 @pytest.mark.parametrize("fail_on_error", [True, False])
-def test_contradictory_status_and_observed_count_never_pass(
-    name, status, count, fail_on_error
-):
-    checks = [
-        QualityCheck(c.check_name, status, count, c.detail)
-        if c.check_name == name else c
-        for c in clean_suite()
-    ]
+def test_contradictory_status_and_observed_count_never_pass(name, status, count, fail_on_error):
+    checks = [QualityCheck(c.check_name, status, count, c.detail) if c.check_name == name else c for c in clean_suite()]
     with pytest.raises(QualityCheckFailed, match="status/count mismatch"):
         enforce(checks, fail_on_error=fail_on_error)
 
@@ -54,8 +48,7 @@ def test_complete_consistent_suite_passes():
 
 def test_genuine_failure_can_still_be_warning_only(caplog):
     checks = [
-        QualityCheck(c.check_name, "FAIL", 2, c.detail)
-        if c.check_name == "natural_key_is_unique" else c
+        QualityCheck(c.check_name, "FAIL", 2, c.detail) if c.check_name == "natural_key_is_unique" else c
         for c in clean_suite()
     ]
     enforce(checks, fail_on_error=False)
