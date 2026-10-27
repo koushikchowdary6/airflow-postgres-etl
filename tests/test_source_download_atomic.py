@@ -132,7 +132,7 @@ def test_empty_success_response_does_not_create_new_snapshot(tmp_path: Path, mon
         b"\xff\xfe\n",
     ],
 )
-def test_invalid_upstream_csv_header_preserves_existing_snapshot(tmp_path: Path, monkeypatch, source_spec, bad_header)):
+def test_invalid_upstream_csv_header_preserves_existing_snapshot(tmp_path: Path, monkeypatch, source_spec, bad_header):
     target = tmp_path / "data.csv"
     target.write_bytes(b"id\nprevious\n")
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(bad_header))
