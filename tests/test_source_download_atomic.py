@@ -39,10 +39,10 @@ def test_successful_download_atomically_replaces_existing_source(tmp_path: Path,
 def test_failed_atomic_replace_preserves_last_good_source(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"old\n")
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\n"))
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"id\n2\n"))
 
     def fail_replace(src, dst):
-        assert Path(src).read_bytes() == b"new\n"
+        assert Path(src).read_bytes() == b"id\n2\n"
         assert dst == target
         raise OSError("simulated rename failure")
 
@@ -71,7 +71,7 @@ def test_failed_download_does_not_touch_existing_snapshot(tmp_path: Path, monkey
 
 def test_failed_download_does_not_publish_new_snapshot(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\n"))
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"id\n2\n"))
 
     def fail_replace(src, dst):
         raise OSError("disk failure")
@@ -88,7 +88,7 @@ def test_failed_download_does_not_publish_new_snapshot(tmp_path: Path, monkeypat
 def test_failed_sync_preserves_previous_snapshot_and_cleans_up(tmp_path: Path, monkeypatch, source_spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"old\\n")
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"new\\n"))
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"id\n2\n"))
 
     def fail_sync(fd):
         raise OSError("simulated sync failure")
@@ -121,3 +121,38 @@ def test_empty_success_response_does_not_create_new_snapshot(tmp_path: Path, mon
         source.fetch(source_spec, target)
 
     assert not target.exists()
+
+
+
+@pytest.mark.parametrize("bad_header", [
+    b"<html><body>upstream unavailable</body></html>",
+    b"other_column\\n1\\n",
+    b"id,id\\n1,2\\n",
+    b"id,\\n1,2\\n",
+    b"\\xff\\xfe\\n",
+])
+def test_invalid_upstream_csv_header_preserves_existing_snapshot(
+    tmp_path: Path, monkeypatch, source_spec, bad_header
+):
+    target = tmp_path / "data.csv"
+    target.write_bytes(b"id\\nprevious\\n")
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(bad_header))
+
+    with pytest.raises(RuntimeError, match="invalid CSV header"):
+        source.fetch(source_spec, target)
+
+    assert target.read_bytes() == b"id\\nprevious\\n"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_invalid_upstream_header_does_not_create_snapshot(
+    tmp_path: Path, monkeypatch, source_spec
+):
+    target = tmp_path / "data.csv"
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"error\\n"))
+
+    with pytest.raises(RuntimeError, match="invalid CSV header"):
+        source.fetch(source_spec, target)
+
+    assert not target.exists()
+    assert not list(tmp_path.glob("*.tmp"))
