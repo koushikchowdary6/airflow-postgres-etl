@@ -122,6 +122,7 @@ def test_empty_success_response_does_not_create_new_snapshot(tmp_path: Path, mon
 
     assert not target.exists()
 
+
 @pytest.mark.parametrize(
     "bad_header",
     [
