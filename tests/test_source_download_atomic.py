@@ -99,3 +99,25 @@ def test_failed_sync_preserves_previous_snapshot_and_cleans_up(tmp_path: Path, m
 
     assert target.read_bytes() == b"old\\n"
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_empty_success_response_preserves_last_good_snapshot(tmp_path: Path, monkeypatch, source_spec):
+    target = tmp_path / "data.csv"
+    target.write_bytes(b"previous,valid,snapshot\\n")
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b""))
+
+    with pytest.raises(RuntimeError, match="is empty"):
+        source.fetch(source_spec, target)
+
+    assert target.read_bytes() == b"previous,valid,snapshot\\n"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_empty_success_response_does_not_create_new_snapshot(tmp_path: Path, monkeypatch, source_spec):
+    target = tmp_path / "data.csv"
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b""))
+
+    with pytest.raises(RuntimeError, match="is empty"):
+        source.fetch(source_spec, target)
+
+    assert not target.exists()
