@@ -83,6 +83,10 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             f"If this host has no outbound network access, download the file manually to "
             f"{destination} and re-run with --offline. See docs/DATASETS.md."
         ) from exc
+    # A successful HTTP status does not guarantee a usable snapshot. An empty
+    # 200 response must not overwrite the last known-good offline source.
+    if not response.content:
+        raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
     # Publish only a fully written download. A disk error or interrupted
     # replacement must not truncate the last known-good raw source: an
     # incremental rerun may need that snapshot for recovery.

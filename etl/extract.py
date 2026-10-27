@@ -81,6 +81,20 @@ def extract_file(
             row_number = offset + 2
             result.rows_read += 1
 
+            # DictReader stores surplus fields under the None key. Ignoring
+            # them would silently accept shifted/truncated source records.
+            # Check before the watermark so malformed old rows remain visible.
+            if None in row:
+                result.rejects.append(
+                    RejectedRow(
+                        source_row_number=row_number,
+                        column_name="__row__",
+                        raw_value=",".join(row[None])[:500],
+                        reason="row has more fields than the CSV header",
+                    )
+                )
+                continue
+
             # Cheap pre-filter: skip old Congresses before full validation.
             raw_congress = (row.get("congress") or "").strip()
             if min_congress is not None and raw_congress.isdigit() and int(raw_congress) < min_congress:
