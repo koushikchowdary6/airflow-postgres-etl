@@ -95,15 +95,12 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     # offline snapshot. Reuse the extractor's header contract so the two
     # paths cannot disagree about required or duplicate columns.
     try:
-        with io.TextIOWrapper(
-            io.BytesIO(response.content), encoding="utf-8-sig", newline=""
-        ) as stream:
+        with io.TextIOWrapper(io.BytesIO(response.content), encoding="utf-8-sig", newline="") as stream:
             header = next(csv.reader(stream, strict=True), None)
         validate_header(header, spec.required_columns)
     except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
         raise RuntimeError(
-            f"Downloaded source {spec.name} has an invalid CSV header; "
-            "previous snapshot preserved"
+            f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
         ) from exc
     # Publish only a fully written download. A disk error or interrupted
     # replacement must not truncate the last known-good raw source: an
