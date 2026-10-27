@@ -126,22 +126,22 @@ def test_empty_success_response_does_not_create_new_snapshot(tmp_path: Path, mon
 
 @pytest.mark.parametrize("bad_header", [
     b"<html><body>upstream unavailable</body></html>",
-    b"other_column\\n1\\n",
-    b"id,id\\n1,2\\n",
-    b"id,\\n1,2\\n",
-    b"\\xff\\xfe\\n",
+    b"other_column\n1\n",
+    b"id,id\n1,2\n",
+    b"id,\n1,2\n",
+    b"\xff\xfe\n",
 ])
 def test_invalid_upstream_csv_header_preserves_existing_snapshot(
     tmp_path: Path, monkeypatch, source_spec, bad_header
 ):
     target = tmp_path / "data.csv"
-    target.write_bytes(b"id\\nprevious\\n")
+    target.write_bytes(b"id\nprevious\n")
     monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(bad_header))
 
     with pytest.raises(RuntimeError, match="invalid CSV header"):
         source.fetch(source_spec, target)
 
-    assert target.read_bytes() == b"id\\nprevious\\n"
+    assert target.read_bytes() == b"id\nprevious\n"
     assert not list(tmp_path.glob("*.tmp"))
 
 
@@ -149,7 +149,7 @@ def test_invalid_upstream_header_does_not_create_snapshot(
     tmp_path: Path, monkeypatch, source_spec
 ):
     target = tmp_path / "data.csv"
-    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"error\\n"))
+    monkeypatch.setattr(requests, "get", lambda url, timeout: _fake_response(b"error\n"))
 
     with pytest.raises(RuntimeError, match="invalid CSV header"):
         source.fetch(source_spec, target)
