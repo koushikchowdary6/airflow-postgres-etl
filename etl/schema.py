@@ -139,6 +139,18 @@ class RowRejected(Exception):
 def validate_header(header: list[str] | None, required: tuple[str, ...]) -> None:
     if header is None:
         raise SchemaError("input file has no header row")
+    # DictReader silently overwrites earlier values when column names repeat.
+    # Reject ambiguous headers before any records or watermark decisions.
+    seen: set[str] = set()
+    duplicates: set[str] = set()
+    for name in header:
+        if name in seen:
+            duplicates.add(name)
+        seen.add(name)
+    if duplicates:
+        raise SchemaError(f"input has duplicate CSV column(s): {sorted(duplicates)}")
+    if any(not name.strip() for name in header):
+        raise SchemaError("input has an empty CSV column name")
     missing = sorted(set(required) - set(header))
     if missing:
         raise SchemaError(
