@@ -18,12 +18,15 @@ Why this dataset suits an incremental ETL:
 
 from __future__ import annotations
 
+import csv
+import io
 import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from .logging_setup import get_logger
+from .schema import SchemaError, validate_header
 
 logger = get_logger(__name__)
 
@@ -87,6 +90,18 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     # 200 response must not overwrite the last known-good offline source.
     if not response.content:
         raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
+    # A 200 response may be an HTML error page or a CSV with a changed
+    # schema. Validate its header before replacing the last known-good
+    # offline snapshot. Reuse the extractor's header contract so the two
+    # paths cannot disagree about required or duplicate columns.
+    try:
+        with io.TextIOWrapper(io.BytesIO(response.content), encoding="utf-8-sig", newline="") as stream:
+            header = next(csv.reader(stream, strict=True), None)
+        validate_header(header, spec.required_columns)
+    except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
+        raise RuntimeError(
+            f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
+        ) from exc
     # Publish only a fully written download. A disk error or interrupted
     # replacement must not truncate the last known-good raw source: an
     # incremental rerun may need that snapshot for recovery.
