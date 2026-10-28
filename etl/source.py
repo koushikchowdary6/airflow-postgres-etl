@@ -116,9 +116,7 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             # upstream response may still be perfectly parseable CSV.
             row_count = sum(bool(row) for row in reader)
             if row_count < spec.minimum_rows:
-                raise ValueError(
-                    f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}"
-                )
+                raise ValueError(f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}")
         except (UnicodeDecodeError, csv.Error, ValueError) as exc:
             raise RuntimeError(
                 f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
