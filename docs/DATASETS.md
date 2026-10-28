@@ -67,7 +67,7 @@ make fetch              # or: python -m etl.cli fetch
 The file lands in `data/raw/aging_congress.csv`, which is gitignored: it is
 reproducible from the URL above and does not belong in version control.
 
-With no outbound network access, download it by hand to that path and run:
+The network fetch also enforces a conservative **25,000-record minimum** for this\nknown 29,120-record historical source. A parseable HTTP 200 containing only a\nfew rows is not a complete dataset: the fetch fails before replacing the\nprevious local snapshot. Blank lines do not count as records. This is a\nsource-specific completeness floor, **not** a checksum or proof that every\nexpected row is present; upstream schema or coverage changes require an\nexplicit review of the floor in `etl/source.py`. The offline path does not\nperform this network-fetch check; downstream extraction and SQL quality checks\nremain necessary.\n\nWith no outbound network access, download it by hand to that path and run:
 
 ```bash
 python -m etl.cli run --offline
