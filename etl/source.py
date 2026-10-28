@@ -90,18 +90,29 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     # 200 response must not overwrite the last known-good offline source.
     if not response.content:
         raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
-    # A 200 response may be an HTML error page or a CSV with a changed
-    # schema. Validate its header before replacing the last known-good
-    # offline snapshot. Reuse the extractor's header contract so the two
-    # paths cannot disagree about required or duplicate columns.
-    try:
-        with io.TextIOWrapper(io.BytesIO(response.content), encoding="utf-8-sig", newline="") as stream:
-            header = next(csv.reader(stream, strict=True), None)
-        validate_header(header, spec.required_columns)
-    except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
-        raise RuntimeError(
-            f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
-        ) from exc
+    # A 200 response may be an HTML error page, a header-only/truncated
+    # snapshot, or a CSV with malformed quoting late in the file. Validate
+    # the *entire* downloaded stream before atomically publishing it. Row-level
+    # schema rejects remain the extractor's responsibility; this check only
+    # establishes that the CSV can be decoded and parsed completely.
+    with io.TextIOWrapper(io.BytesIO(response.content), encoding="utf-8-sig", newline="") as stream:
+        reader = csv.reader(stream, strict=True)
+        try:
+            header = next(reader, None)
+            validate_header(header, spec.required_columns)
+        except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
+            raise RuntimeError(
+                f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
+            ) from exc
+        try:
+            if next(reader, None) is None:
+                raise ValueError("CSV has no data rows")
+            for _row in reader:
+                pass
+        except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+            raise RuntimeError(
+                f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
+            ) from exc
     # Publish only a fully written download. A disk error or interrupted
     # replacement must not truncate the last known-good raw source: an
     # incremental rerun may need that snapshot for recovery.
