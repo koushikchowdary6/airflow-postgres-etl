@@ -105,7 +105,9 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
                 f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
             ) from exc
         try:
-            if next(reader, None) is None:
+            # csv.reader yields [] for blank physical lines. A header plus
+            # blank lines is still an empty snapshot and must not replace data.
+            if next((row for row in reader if row), None) is None:
                 raise ValueError("CSV has no data rows")
             for _row in reader:
                 pass
