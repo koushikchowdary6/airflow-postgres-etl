@@ -26,9 +26,7 @@ def _serve(monkeypatch, payload: bytes):
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(
-            content=payload, raise_for_status=lambda: None
-        ),
+        lambda url, timeout: SimpleNamespace(content=payload, raise_for_status=lambda: None),
     )
 
 
@@ -75,9 +73,7 @@ def test_complete_snapshot_passes_with_minimum_rows(tmp_path: Path, monkeypatch,
 
 
 @pytest.mark.parametrize("minimum_rows", [0, -1, True, 1.5, "10"])
-def test_invalid_source_minimum_is_rejected_before_download(
-    tmp_path: Path, monkeypatch, spec, minimum_rows
-):
+def test_invalid_source_minimum_is_rejected_before_download(tmp_path: Path, monkeypatch, spec, minimum_rows):
     invalid = SourceSpec(
         name=spec.name,
         description=spec.description,
