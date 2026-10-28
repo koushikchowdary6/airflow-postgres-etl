@@ -41,6 +41,7 @@ class SourceSpec:
     filename: str
     required_columns: tuple[str, ...]
     attribution: str
+    minimum_rows: int = 1
 
 
 AGING_CONGRESS = SourceSpec(
@@ -64,6 +65,9 @@ AGING_CONGRESS = SourceSpec(
         "generation",
     ),
     attribution="FiveThirtyEight, 'Congress Today Is Older Than It's Ever Been' (CC BY 4.0)",
+    # Known historical snapshot has 29,120 rows. Reject implausibly short
+    # but syntactically valid 200 responses before publishing them.
+    minimum_rows=25_000,
 )
 
 
@@ -75,6 +79,8 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     """
     import requests  # noqa: PLC0415
 
+    if isinstance(spec.minimum_rows, bool) or not isinstance(spec.minimum_rows, int) or spec.minimum_rows < 1:
+        raise ValueError("source minimum_rows must be a positive integer")
     destination.parent.mkdir(parents=True, exist_ok=True)
     logger.info("fetching source", extra={"source": spec.name, "url": spec.url})
     try:
@@ -105,12 +111,14 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
                 f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
             ) from exc
         try:
-            # csv.reader yields [] for blank physical lines. A header plus
-            # blank lines is still an empty snapshot and must not replace data.
-            if next((row for row in reader if row), None) is None:
-                raise ValueError("CSV has no data rows")
-            for _row in reader:
-                pass
+            # csv.reader yields [] for blank physical lines. Count all
+            # nonblank records, not just the first valid row: a truncated
+            # upstream response may still be perfectly parseable CSV.
+            row_count = sum(bool(row) for row in reader)
+            if row_count < spec.minimum_rows:
+                raise ValueError(
+                    f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}"
+                )
         except (UnicodeDecodeError, csv.Error, ValueError) as exc:
             raise RuntimeError(
                 f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
