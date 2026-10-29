@@ -72,7 +72,9 @@ def _validated_quality_check(row: tuple[object, ...]) -> QualityCheck:
     if not isinstance(status, str) or status not in {"PASS", "FAIL"}:
         raise QualityCheckFailed(f"Invalid SQL quality result for {name}: status must be PASS or FAIL")
     if isinstance(observed, bool) or not isinstance(observed, int) or observed < 0:
-        raise QualityCheckFailed(f"Invalid SQL quality result for {name}: observed must be a nonnegative integer")
+        raise QualityCheckFailed(
+            f"Invalid SQL quality result for {name}: observed must be a nonnegative integer (status/count mismatch)"
+        )
     if not isinstance(detail, str) or not detail.strip():
         raise QualityCheckFailed(f"Invalid SQL quality result for {name}: missing detail")
     return QualityCheck(name, status, observed, detail)
@@ -91,6 +93,13 @@ def failures(checks: list[QualityCheck]) -> list[QualityCheck]:
     return [c for c in checks if not c.passed]
 
 
+def _validate_quality_checks(checks: list[QualityCheck]) -> None:
+    for check in checks:
+        if not isinstance(check, QualityCheck):
+            raise QualityCheckFailed("Invalid SQL quality result: expected QualityCheck")
+        _validated_quality_check((check.check_name, check.status, check.observed, check.detail))
+
+
 def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
     """Require a complete, unique suite before interpreting individual results.
 
@@ -99,12 +108,8 @@ def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
     result from silently advancing the incremental watermark.
     """
     # Callers can supply QualityCheck objects directly, without run_checks().
-    # Validate those too: malformed evidence must never advance the watermark,
-    # even when fail_on_error=False.
-    for check in checks:
-        if not isinstance(check, QualityCheck):
-            raise QualityCheckFailed("Invalid SQL quality result: expected QualityCheck")
-        _validated_quality_check((check.check_name, check.status, check.observed, check.detail))
+    # Validate those too, including in warning-only mode.
+    _validate_quality_checks(checks)
     names = [check.check_name for check in checks]
     seen: set[str] = set()
     duplicates: set[str] = set()
