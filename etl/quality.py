@@ -58,12 +58,29 @@ class QualityCheck:
         }
 
 
+def _validated_quality_check(row: tuple[object, ...]) -> QualityCheck:
+    """Do not coerce malformed SQL evidence into a plausible PASS result.
+
+    COUNT(*) yields a Python int with psycopg2. In particular, int(True),
+    int(0.5), and int("0") would silently change the meaning of the result.
+    """
+    if len(row) != 4:
+        raise QualityCheckFailed("Invalid SQL quality result: expected four columns")
+    name, status, observed, detail = row
+    if not isinstance(name, str) or not name.strip() or name != name.strip():
+        raise QualityCheckFailed("Invalid SQL quality result: malformed check name")
+    if not isinstance(status, str) or status not in {"PASS", "FAIL"}:
+        raise QualityCheckFailed(f"Invalid SQL quality result for {name}: status must be PASS or FAIL")
+    if isinstance(observed, bool) or not isinstance(observed, int) or observed < 0:
+        raise QualityCheckFailed(f"Invalid SQL quality result for {name}: observed must be a nonnegative integer")
+    if not isinstance(detail, str) or not detail.strip():
+        raise QualityCheckFailed(f"Invalid SQL quality result for {name}: missing detail")
+    return QualityCheck(name, status, observed, detail)
+
+
 def run_checks(cursor: psycopg2.extensions.cursor) -> list[QualityCheck]:
     cursor.execute(read_sql("004_quality.sql"))
-    checks = [
-        QualityCheck(check_name=str(r[0]), status=str(r[1]), observed=int(r[2]), detail=str(r[3]))
-        for r in cursor.fetchall()
-    ]
+    checks = [_validated_quality_check(tuple(row)) for row in cursor.fetchall()]
     for check in checks:
         log = logger.info if check.passed else logger.error
         log("quality check", extra=check.as_dict())
@@ -81,6 +98,13 @@ def enforce(checks: list[QualityCheck], *, fail_on_error: bool = True) -> None:
     optional data-quality warnings. This prevents an empty or partial SQL
     result from silently advancing the incremental watermark.
     """
+    # Callers can supply QualityCheck objects directly, without run_checks().
+    # Validate those too: malformed evidence must never advance the watermark,
+    # even when fail_on_error=False.
+    for check in checks:
+        if not isinstance(check, QualityCheck):
+            raise QualityCheckFailed("Invalid SQL quality result: expected QualityCheck")
+        _validated_quality_check((check.check_name, check.status, check.observed, check.detail))
     names = [check.check_name for check in checks]
     seen: set[str] = set()
     duplicates: set[str] = set()
