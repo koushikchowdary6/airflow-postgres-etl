@@ -31,6 +31,10 @@ from .schema import SchemaError, validate_header
 logger = get_logger(__name__)
 
 HTTP_TIMEOUT_SECONDS = 60
+# Bound parsing and persistence of unexpectedly large upstream responses.
+# requests.get() has already buffered the response; this is a CSV processing
+# and disk-publishing limit, not a network streaming/memory limit.
+MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,10 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     # 200 response must not overwrite the last known-good offline source.
     if not response.content:
         raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
+    if len(response.content) > MAX_SOURCE_BYTES:
+        raise RuntimeError(
+            f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved"
+        )
     # A 200 response may be an HTML error page, a header-only/truncated
     # snapshot, or a CSV with malformed quoting late in the file. Validate
     # the *entire* downloaded stream before atomically publishing it. Row-level
