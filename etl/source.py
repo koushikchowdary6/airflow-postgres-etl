@@ -101,9 +101,7 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
     if not response.content:
         raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
     if len(response.content) > MAX_SOURCE_BYTES:
-        raise RuntimeError(
-            f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved"
-        )
+        raise RuntimeError(f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved")
     # A 200 response may be an HTML error page, a header-only/truncated
     # snapshot, or a CSV with malformed quoting late in the file. Validate
     # the *entire* downloaded stream before atomically publishing it. Row-level
