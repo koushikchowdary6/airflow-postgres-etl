@@ -64,9 +64,7 @@ def test_streamed_multichunk_csv_is_published_byte_for_byte(tmp_path: Path, monk
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_stream_limit_rejects_before_consuming_remaining_chunks(
-    tmp_path: Path, monkeypatch, spec
-):
+def test_stream_limit_rejects_before_consuming_remaining_chunks(tmp_path: Path, monkeypatch, spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"id\nprevious\n")
     monkeypatch.setattr(source, "MAX_SOURCE_BYTES", 8)
@@ -96,9 +94,7 @@ def test_interrupted_stream_preserves_existing_snapshot(tmp_path: Path, monkeypa
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_invalid_streamed_csv_closes_response_and_preserves_snapshot(
-    tmp_path: Path, monkeypatch, spec
-):
+def test_invalid_streamed_csv_closes_response_and_preserves_snapshot(tmp_path: Path, monkeypatch, spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"id\nprevious\n")
     response = StreamResponse([b'id\n"unterminated'])
