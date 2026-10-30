@@ -62,7 +62,7 @@ def test_invalid_body_never_creates_new_snapshot(tmp_path: Path, monkeypatch, sp
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout, stream: _response(b'id\\n"unfinished'),
+        lambda url, timeout, stream: _response(b'id\n"unfinished'),
     )
 
     with pytest.raises(RuntimeError, match="invalid CSV body"):
