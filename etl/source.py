@@ -73,6 +73,27 @@ AGING_CONGRESS = SourceSpec(
 )
 
 
+def _validate_staged_csv(path: Path, spec: SourceSpec) -> None:
+    """Validate the complete downloaded CSV before publishing it."""
+    with path.open("r", encoding="utf-8-sig", newline="") as stream:
+        reader = csv.reader(stream, strict=True)
+        try:
+            header = next(reader, None)
+            validate_header(header, spec.required_columns)
+        except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
+            raise RuntimeError(
+                f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
+            ) from exc
+        try:
+            row_count = sum(bool(row) for row in reader)
+            if row_count < spec.minimum_rows:
+                raise ValueError(f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}")
+        except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+            raise RuntimeError(
+                f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
+            ) from exc
+
+
 def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SECONDS) -> Path:
     """Stream, validate, and atomically publish a complete source CSV.
 
@@ -125,26 +146,7 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             handle.flush()
             os.fsync(handle.fileno())
 
-        # Validate the *complete* staged file, not just a prefix. Quoted
-        # multiline records, UTF-8 errors, and truncated responses are
-        # checked before the atomic replacement of the previous snapshot.
-        with temporary.open("r", encoding="utf-8-sig", newline="") as stream:
-            reader = csv.reader(stream, strict=True)
-            try:
-                header = next(reader, None)
-                validate_header(header, spec.required_columns)
-            except (UnicodeDecodeError, csv.Error, SchemaError) as exc:
-                raise RuntimeError(
-                    f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
-                ) from exc
-            try:
-                row_count = sum(bool(row) for row in reader)
-                if row_count < spec.minimum_rows:
-                    raise ValueError(f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}")
-            except (UnicodeDecodeError, csv.Error, ValueError) as exc:
-                raise RuntimeError(
-                    f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
-                ) from exc
+        _validate_staged_csv(temporary, spec)
 
         os.replace(temporary, destination)
     finally:
