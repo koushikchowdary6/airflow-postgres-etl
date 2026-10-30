@@ -85,7 +85,7 @@ def test_stream_limit_rejects_before_consuming_remaining_chunks(
 def test_interrupted_stream_preserves_existing_snapshot(tmp_path: Path, monkeypatch, spec):
     target = tmp_path / "data.csv"
     target.write_bytes(b"id\\nprevious\\n")
-    response = StreamResponse([b"id\\n1\\n", requests.ChunkedEncodingError("connection lost")])
+    response = StreamResponse([b"id\\n1\\n", requests.exceptions.ChunkedEncodingError("connection lost")])
     _serve(monkeypatch, response)
 
     with pytest.raises(RuntimeError, match="interrupted stream"):
