@@ -9,6 +9,14 @@ import requests
 from etl import source
 
 
+def _response(payload: bytes):
+    return SimpleNamespace(
+        iter_content=lambda chunk_size: (payload,),
+        close=lambda: None,
+        raise_for_status=lambda: None,
+    )
+
+
 @pytest.fixture
 def spec():
     return source.SourceSpec(
@@ -33,7 +41,7 @@ def test_oversized_csv_preserves_snapshot(tmp_path: Path, monkeypatch, spec, has
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout, stream: SimpleNamespace(iter_content=lambda chunk_size: (payload,), close=lambda: None, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
     with pytest.raises(RuntimeError, match="exceeds maximum size"):
@@ -53,7 +61,7 @@ def test_csv_at_exact_size_limit_is_accepted(tmp_path: Path, monkeypatch, spec):
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout, stream: SimpleNamespace(iter_content=lambda chunk_size: (payload,), close=lambda: None, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
     assert source.fetch(spec, destination) == destination
