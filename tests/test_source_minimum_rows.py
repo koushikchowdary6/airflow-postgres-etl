@@ -9,6 +9,14 @@ import requests
 from etl.source import AGING_CONGRESS, SourceSpec, fetch
 
 
+def _response(payload: bytes):
+    return SimpleNamespace(
+        iter_content=lambda chunk_size: (payload,),
+        close=lambda: None,
+        raise_for_status=lambda: None,
+    )
+
+
 @pytest.fixture
 def spec():
     return SourceSpec(
@@ -26,7 +34,7 @@ def _serve(monkeypatch, payload: bytes):
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout, stream: SimpleNamespace(iter_content=lambda chunk_size: (payload,), close=lambda: None, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
 
