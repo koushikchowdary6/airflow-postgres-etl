@@ -22,7 +22,11 @@ def source_spec():
 
 
 def _fake_response(payload: bytes):
-    return SimpleNamespace(iter_content=lambda chunk_size: (payload,), close=lambda: None, raise_for_status=lambda: None)
+    return SimpleNamespace(
+        iter_content=lambda chunk_size: (payload,),
+        close=lambda: None,
+        raise_for_status=lambda: None,
+    )
 
 
 def test_successful_download_atomically_replaces_existing_source(tmp_path: Path, monkeypatch, source_spec):
