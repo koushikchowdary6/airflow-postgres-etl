@@ -122,8 +122,11 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             ) from exc
 
         with tempfile.NamedTemporaryFile(
-            mode="wb", dir=destination.parent, prefix=f".{destination.name}.",
-            suffix=".tmp", delete=False,
+            mode="wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as handle:
             temporary = Path(handle.name)
             try:
@@ -138,8 +141,7 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
                     handle.write(chunk)
             except requests.RequestException as exc:
                 raise RuntimeError(
-                    f"Could not download {spec.name} from {spec.url}: interrupted stream; "
-                    "previous snapshot preserved"
+                    f"Could not download {spec.name} from {spec.url}: interrupted stream; previous snapshot preserved"
                 ) from exc
             if not bytes_written:
                 raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
