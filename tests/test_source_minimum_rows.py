@@ -26,7 +26,7 @@ def _serve(monkeypatch, payload: bytes):
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(content=payload, raise_for_status=lambda: None),
+        lambda url, timeout, stream: SimpleNamespace(iter_content=lambda chunk_size: (payload,), close=lambda: None, raise_for_status=lambda: None),
     )
 
 
