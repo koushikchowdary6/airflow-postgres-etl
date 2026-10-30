@@ -85,6 +85,12 @@ Two details that matter more than the box count:
   load task `COPY`s. The CSV is published with an atomic rename so a failed
   write cannot expose a partial batch or overwrite a valid staged file. The
   file also survives as a debugging artefact.
+- **Upstream CSV downloads are streamed to a temporary file** with a 20 MiB
+  byte cap enforced as chunks arrive, rather than buffering the whole HTTP
+  response. The entire UTF-8 CSV, header, and minimum row count are validated
+  before atomic publication. Oversized, interrupted, empty, or malformed
+  downloads leave the last-good raw snapshot untouched. This bounds response
+  buffering, not downstream parser memory or total process memory.
 
 ## Quickstart
 

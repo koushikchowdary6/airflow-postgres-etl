@@ -9,6 +9,14 @@ import requests
 from etl.source import SourceSpec, fetch
 
 
+def _response(payload: bytes):
+    return SimpleNamespace(
+        iter_content=lambda chunk_size: (payload,),
+        close=lambda: None,
+        raise_for_status=lambda: None,
+    )
+
+
 @pytest.fixture
 def spec():
     return SourceSpec(
@@ -39,7 +47,7 @@ def test_incomplete_or_corrupt_download_preserves_last_good_snapshot(tmp_path: P
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(content=payload, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
     with pytest.raises(RuntimeError, match=r"invalid CSV (?:header|body)"):
@@ -54,7 +62,7 @@ def test_invalid_body_never_creates_new_snapshot(tmp_path: Path, monkeypatch, sp
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(content=b'id\n"unfinished', raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(b'id\n"unfinished'),
     )
 
     with pytest.raises(RuntimeError, match="invalid CSV body"):
@@ -69,7 +77,7 @@ def test_valid_quoted_multiline_csv_is_published_without_modification(tmp_path: 
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(content=payload, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
     assert fetch(spec, destination) == destination
@@ -82,7 +90,7 @@ def test_row_level_shape_errors_remain_extractors_responsibility(tmp_path: Path,
     monkeypatch.setattr(
         requests,
         "get",
-        lambda url, timeout: SimpleNamespace(content=payload, raise_for_status=lambda: None),
+        lambda url, timeout, stream: _response(payload),
     )
 
     fetch(spec, destination)

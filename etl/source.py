@@ -19,7 +19,6 @@ Why this dataset suits an incremental ETL:
 from __future__ import annotations
 
 import csv
-import io
 import os
 import tempfile
 from dataclasses import dataclass
@@ -32,8 +31,7 @@ logger = get_logger(__name__)
 
 HTTP_TIMEOUT_SECONDS = 60
 # Bound parsing and persistence of unexpectedly large upstream responses.
-# requests.get() has already buffered the response; this is a CSV processing
-# and disk-publishing limit, not a network streaming/memory limit.
+# Enforced while reading the HTTP stream, before the response is buffered.
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
 
@@ -75,39 +73,9 @@ AGING_CONGRESS = SourceSpec(
 )
 
 
-def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SECONDS) -> Path:
-    """Download the source CSV.
-
-    ``requests`` is imported lazily so the package stays importable in an
-    environment without it (CI unit tests run entirely from fixtures).
-    """
-    import requests  # noqa: PLC0415
-
-    if isinstance(spec.minimum_rows, bool) or not isinstance(spec.minimum_rows, int) or spec.minimum_rows < 1:
-        raise ValueError("source minimum_rows must be a positive integer")
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    logger.info("fetching source", extra={"source": spec.name, "url": spec.url})
-    try:
-        response = requests.get(spec.url, timeout=timeout)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise RuntimeError(
-            f"Could not download {spec.name} from {spec.url}: {exc}. "
-            f"If this host has no outbound network access, download the file manually to "
-            f"{destination} and re-run with --offline. See docs/DATASETS.md."
-        ) from exc
-    # A successful HTTP status does not guarantee a usable snapshot. An empty
-    # 200 response must not overwrite the last known-good offline source.
-    if not response.content:
-        raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
-    if len(response.content) > MAX_SOURCE_BYTES:
-        raise RuntimeError(f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved")
-    # A 200 response may be an HTML error page, a header-only/truncated
-    # snapshot, or a CSV with malformed quoting late in the file. Validate
-    # the *entire* downloaded stream before atomically publishing it. Row-level
-    # schema rejects remain the extractor's responsibility; this check only
-    # establishes that the CSV can be decoded and parsed completely.
-    with io.TextIOWrapper(io.BytesIO(response.content), encoding="utf-8-sig", newline="") as stream:
+def _validate_staged_csv(path: Path, spec: SourceSpec) -> None:
+    """Validate the complete downloaded CSV before publishing it."""
+    with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream, strict=True)
         try:
             header = next(reader, None)
@@ -117,9 +85,6 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
                 f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
             ) from exc
         try:
-            # csv.reader yields [] for blank physical lines. Count all
-            # nonblank records, not just the first valid row: a truncated
-            # upstream response may still be perfectly parseable CSV.
             row_count = sum(bool(row) for row in reader)
             if row_count < spec.minimum_rows:
                 raise ValueError(f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}")
@@ -127,11 +92,35 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             raise RuntimeError(
                 f"Downloaded source {spec.name} has an invalid CSV body; previous snapshot preserved"
             ) from exc
-    # Publish only a fully written download. A disk error or interrupted
-    # replacement must not truncate the last known-good raw source: an
-    # incremental rerun may need that snapshot for recovery.
+
+
+def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SECONDS) -> Path:
+    """Stream, validate, and atomically publish a complete source CSV.
+
+    An oversized or interrupted upstream response must never replace the
+    last-good snapshot. The byte cap is enforced during transfer, not after
+    requests has already buffered the entire body in memory.
+    """
+    import requests  # noqa: PLC0415
+
+    if isinstance(spec.minimum_rows, bool) or not isinstance(spec.minimum_rows, int) or spec.minimum_rows < 1:
+        raise ValueError("source minimum_rows must be a positive integer")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    logger.info("fetching source", extra={"source": spec.name, "url": spec.url})
+    response = None
     temporary: Path | None = None
+    bytes_written = 0
     try:
+        try:
+            response = requests.get(spec.url, timeout=timeout, stream=True)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                f"Could not download {spec.name} from {spec.url}: {exc}. "
+                f"If this host has no outbound network access, download the file manually to "
+                f"{destination} and re-run with --offline. See docs/DATASETS.md."
+            ) from exc
+
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=destination.parent,
@@ -140,15 +129,35 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
             delete=False,
         ) as handle:
             temporary = Path(handle.name)
-            handle.write(response.content)
+            try:
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    bytes_written += len(chunk)
+                    if bytes_written > MAX_SOURCE_BYTES:
+                        raise RuntimeError(
+                            f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved"
+                        )
+                    handle.write(chunk)
+            except requests.RequestException as exc:
+                raise RuntimeError(
+                    f"Could not download {spec.name} from {spec.url}: interrupted stream; previous snapshot preserved"
+                ) from exc
+            if not bytes_written:
+                raise RuntimeError(f"Downloaded source {spec.name} is empty; previous snapshot preserved")
             handle.flush()
             os.fsync(handle.fileno())
+
+        _validate_staged_csv(temporary, spec)
+
         os.replace(temporary, destination)
     finally:
+        if response is not None:
+            response.close()
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     logger.info(
         "fetched source",
-        extra={"source": spec.name, "bytes": len(response.content), "path": str(destination)},
+        extra={"source": spec.name, "bytes": bytes_written, "path": str(destination)},
     )
     return destination
