@@ -87,3 +87,37 @@ def test_surplus_fields_do_not_discard_other_valid_rows(tmp_path):
     assert len(result.records) == 3
     assert len(result.rejects) == 1
     assert result.rejects[0].source_row_number == 3
+
+
+def test_missing_trailing_field_is_rejected_before_watermark(tmp_path):
+    lines = _rows()
+    # Congress 66 would normally be skipped by a floor of 67. Its missing
+    # generation column is still source corruption and must be audited.
+    lines[1] = lines[1].rsplit(",", 1)[0]
+    path = tmp_path / "short-historical.csv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = extract_file(AGING_CONGRESS, path, today=TODAY, min_congress=67)
+    assert result.rows_read == 4
+    assert result.rows_skipped_by_watermark == 1
+    assert len(result.records) == 2
+    assert len(result.rejects) == 1
+    reject = result.rejects[0]
+    assert reject.source_row_number == 2
+    assert reject.column_name == "__row__"
+    assert reject.raw_value == ""
+    assert "fewer fields" in reject.reason
+
+
+def test_short_current_row_does_not_discard_valid_rows(tmp_path):
+    lines = _rows()
+    lines[2] = lines[2].rsplit(",", 1)[0]
+    path = tmp_path / "short-current.csv"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = extract_file(AGING_CONGRESS, path, today=TODAY)
+    assert result.rows_read == 4
+    assert len(result.records) == 3
+    assert len(result.rejects) == 1
+    assert result.rejects[0].source_row_number == 3
+    assert "fewer fields" in result.rejects[0].reason
