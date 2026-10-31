@@ -121,7 +121,6 @@ def step_load_staging(config: Config, *, batch_id: str, staged_path: str) -> dic
     return {"batch_id": batch_id, "rows_staged": loaded}
 
 
-
 def step_load_and_upsert(config: Config, *, batch_id: str, staged_path: str) -> dict[str, Any]:
     """COPY and upsert one batch in the same PostgreSQL transaction.
 
