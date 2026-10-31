@@ -36,9 +36,7 @@ class RecordingCursor:
     ],
     ids=["missing", "reordered", "short", "extra", "duplicate", "empty"],
 )
-def test_copy_rejects_incompatible_headers_before_database_write(
-    tmp_path: Path, header: list[str]
-):
+def test_copy_rejects_incompatible_headers_before_database_write(tmp_path: Path, header: list[str]):
     path = tmp_path / "staged.csv"
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
@@ -67,5 +65,5 @@ def test_copy_rewinds_validated_file_before_bulk_load(tmp_path: Path):
     assert len(cursor.copy_calls) == 1
     statement, copied = cursor.copy_calls[0]
     assert "HEADER true" in statement
-    assert copied == path.read_text(encoding="utf-8")
+    assert copied.encode("utf-8") == path.read_bytes()
     assert cursor.statements == ["SELECT COUNT(*) FROM staging.member_term_stage"]
