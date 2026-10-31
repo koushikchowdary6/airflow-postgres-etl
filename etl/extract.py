@@ -94,6 +94,19 @@ def extract_file(
                     )
                 )
                 continue
+            # DictReader fills absent trailing columns with None. Check the
+            # entire row before the watermark filter: a truncated historical
+            # record must not disappear into the skipped-row count.
+            if any(value is None for value in row.values()):
+                result.rejects.append(
+                    RejectedRow(
+                        source_row_number=row_number,
+                        column_name="__row__",
+                        raw_value="",
+                        reason="row has fewer fields than the CSV header",
+                    )
+                )
+                continue
 
             # Cheap pre-filter: skip old Congresses before full validation.
             raw_congress = (row.get("congress") or "").strip()
