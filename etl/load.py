@@ -68,7 +68,18 @@ def copy_staged_csv(cursor: psycopg2.extensions.cursor, source: Path) -> int:
             f"ETL_DATA_DIR/staged/<batch_id>.csv."
         )
     columns = ", ".join(STAGE_COLUMNS)
-    with source.open("r", encoding="utf-8") as handle:
+    # PostgreSQL COPY HEADER true skips the first record but does NOT check
+    # its names or order. A stale/reordered staged file could otherwise map
+    # values into the wrong business columns without raising an error.
+    # Validate the header on the SAME open descriptor that COPY will read.
+    with source.open("r", encoding="utf-8", newline="") as handle:
+        try:
+            header = next(csv.reader(handle, strict=True), None)
+        except csv.Error as exc:
+            raise ValueError("staged CSV has an invalid header") from exc
+        if header != list(STAGE_COLUMNS):
+            raise ValueError("staged CSV header must exactly match staging column order")
+        handle.seek(0)
         cursor.copy_expert(
             f"COPY staging.member_term_stage ({columns}) FROM STDIN WITH (FORMAT csv, HEADER true)",
             handle,
