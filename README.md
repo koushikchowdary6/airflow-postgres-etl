@@ -10,9 +10,11 @@ that skips unchanged rows, verified by full re-process with identical
 fingerprint), and **verified against PostgreSQL 16.15** — 156 tests, nine
 data-quality checks, real data, and DAG execution.
 
-**Architecture:** Seven-task DAG (ensure schema → extract → stage → upsert →
+**Architecture:** Six-task DAG (ensure schema → extract → atomic stage+upsert →
 analytics → quality checks → advance watermark). File-based handoff between
-tasks. Watermark advances only after quality checks pass. Duplicate input rows
+tasks. The `TRUNCATE`, `COPY` and upsert share a PostgreSQL transaction: a
+second run cannot replace staging before the first has upserted.
+Watermark advances only after quality checks pass. Duplicate input rows are
 handled by `DISTINCT ON`.
 
 **Key design:** Deterministic natural key prevents re-processing duplicates.
@@ -22,7 +24,8 @@ internal consistency before watermark moves.
 
 > **Honest status.** The SQL, pipeline, and DAG all executed against
 > PostgreSQL 16.15. `airflow dags test` completed all seven tasks successfully
-> with 29,120 real rows processed. **The Docker Compose stack was never
+> with 29,120 real rows processed (the earlier seven-task DAG; the current
+> six-task graph is checked in CI). **The Docker Compose stack was never
 > started** — no Docker daemon was available, so PostgreSQL was installed
 > directly instead. `docker compose config` validates YAML/dependencies; it
 > does not prove containers come up healthy. The Airflow *scheduler* was not
@@ -45,14 +48,13 @@ flowchart TD
     subgraph dag ["Airflow DAG — congress_demographics_etl (daily 06:00)"]
         T1["ensure_schema<br/>idempotent DDL"]
         T2["extract<br/>validate · dedup · watermark floor"]
-        T3["load_staging<br/>TRUNCATE + COPY"]
-        T4["upsert<br/>ON CONFLICT, natural key"]
-        T5["build_analytics<br/>rebuild aggregate"]
-        T6["data_quality<br/>9 SQL checks"]
-        T7["advance_watermark"]
+        T3["load_and_upsert<br/>transactional TRUNCATE + COPY + upsert"]
+        T4["build_analytics<br/>rebuild aggregate"]
+        T5["data_quality<br/>9 SQL checks"]
+        T6["advance_watermark"]
     end
 
-    A --> T1 --> T2 --> T3 --> T4 --> T5 --> T6 --> T7
+    A --> T1 --> T2 --> T3 --> T4 --> T5 --> T6
 
     T2 -. "bad rows + reason" .-> REJ[("etl.rejected_row")]
     T2 -. "staged CSV<br/>(task hand-off)" .-> FILE[("data/staged/&lt;batch&gt;.csv")]
@@ -66,11 +68,11 @@ flowchart TD
     end
 
     T3 --> S
-    T4 --> F
-    T5 --> M
-    T6 --> B
-    T7 --> W
-    T6 -- "any check fails" --> X["Run fails,<br/>watermark held back"]
+    T3 --> F
+    T4 --> M
+    T5 --> B
+    T6 --> W
+    T5 -- "any check fails" --> X["Run fails,<br/>watermark held back"]
 ```
 
 Two details that matter more than the box count:
@@ -82,7 +84,7 @@ Two details that matter more than the box count:
   unverified data.
 - **Tasks hand off a file plus a batch id, not memory.** Airflow runs each task
   in its own process, so validated rows are written to a staged CSV that the
-  load task `COPY`s. The CSV is published with an atomic rename so a failed
+  combined load/upsert task `COPY`s. The CSV is published with an atomic rename so a failed
   write cannot expose a partial batch or overwrite a valid staged file. The
   file also survives as a debugging artefact.
 - **Upstream CSV downloads are streamed to a temporary file** with a 20 MiB
@@ -138,7 +140,7 @@ make test         # 133 tests (needs a database named *test*)
 | Real data pipeline | PostgreSQL 16.15 | **29,120 rows, 0 rejected, 0 duplicates** |
 | Data-quality checks | SQL | **9/9 pass** |
 | Idempotency check | PostgreSQL 16.15 | **0 inserted, 0 updated, fingerprint identical** |
-| DAG execution | `airflow dags test` | **7/7 tasks SUCCESS** |
+| Historical DAG execution | `airflow dags test` | **7/7 tasks SUCCESS** (before stage/upsert consolidation) |
 | CI on GitHub Actions | postgres service + real tests | **passes** |
 | `docker compose up` | — | **not run** (no daemon) |
 | Airflow scheduler | — | **not run** |

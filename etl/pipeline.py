@@ -121,6 +121,38 @@ def step_load_staging(config: Config, *, batch_id: str, staged_path: str) -> dic
     return {"batch_id": batch_id, "rows_staged": loaded}
 
 
+def step_load_and_upsert(config: Config, *, batch_id: str, staged_path: str) -> dict[str, Any]:
+    """COPY and upsert one batch in the same PostgreSQL transaction.
+
+    TRUNCATE takes an ACCESS EXCLUSIVE lock on the shared staging table until
+    commit. Keeping that lock through the upsert prevents another CLI/DAG run
+    from replacing our staged rows between the two operations. A failed COPY
+    or upsert rolls back both changes instead of publishing an orphan stage.
+    """
+    with transaction(config) as cursor:
+        truncate_staging(cursor)
+        loaded = copy_staged_csv(cursor, Path(staged_path))
+        before = fact_row_count(cursor)
+        stats = upsert_fact(cursor)
+        after = fact_row_count(cursor)
+        finish_batch(
+            cursor,
+            batch_id,
+            "running",
+            counts={
+                "rows_staged": loaded,
+                "rows_inserted": stats["rows_inserted"],
+                "rows_updated": stats["rows_updated"],
+            },
+        )
+    return {
+        "batch_id": batch_id,
+        "fact_rows_before": before,
+        "fact_rows_after": after,
+        **stats,
+    }
+
+
 def step_upsert(config: Config, *, batch_id: str) -> dict[str, Any]:
     """Apply the idempotent upsert from staging to the fact table."""
     with transaction(config) as cursor:
@@ -201,8 +233,7 @@ def run_all(
     extracted = step_extract(config, offline=offline, full_refresh=full_refresh, dag_run_id=dag_run_id)
     batch_id = extracted["batch_id"]
     try:
-        staged = step_load_staging(config, batch_id=batch_id, staged_path=extracted["staged_path"])
-        upserted = step_upsert(config, batch_id=batch_id)
+        upserted = step_load_and_upsert(config, batch_id=batch_id, staged_path=extracted["staged_path"])
         analytics = step_build_analytics(config)
         quality = step_quality(config, batch_id=batch_id)
         advanced = step_advance_watermark(
@@ -223,7 +254,6 @@ def run_all(
 
     summary = {
         **extracted,
-        **staged,
         **upserted,
         **analytics,
         "quality_passed": quality["all_passed"],

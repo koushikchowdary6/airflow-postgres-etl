@@ -23,8 +23,7 @@ DAG_FILE = Path(__file__).parent.parent / "dags" / "congress_demographics_etl.py
 EXPECTED_TASKS = [
     "ensure_schema",
     "extract",
-    "load_staging",
-    "upsert",
+    "load_and_upsert",
     "build_analytics",
     "data_quality",
     "advance_watermark",
@@ -154,9 +153,8 @@ class TestWithRealAirflow:
         order = [t.task_id for t in dag.topological_sort()]
         for earlier, later in [
             ("ensure_schema", "extract"),
-            ("extract", "load_staging"),
-            ("load_staging", "upsert"),
-            ("upsert", "build_analytics"),
+            ("extract", "load_and_upsert"),
+            ("load_and_upsert", "build_analytics"),
             ("build_analytics", "data_quality"),
             ("data_quality", "advance_watermark"),
         ]:
