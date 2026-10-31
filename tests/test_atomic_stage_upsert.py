@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import etl.pipeline as pipeline
+from etl import pipeline
 from etl.config import Config
 from etl.db import transaction
 from etl.extract import extract_file
@@ -44,6 +44,16 @@ def test_failed_copy_rolls_back_staging_truncate_and_fact(clean_db: Config, tmp_
         cursor.execute("SELECT COUNT(*) FROM staging.member_term_stage")
         assert cursor.fetchone()[0] == previous_staged == 4
         assert fact_fingerprint(cursor) == previous_fact
+
+
+def assert_isolated_batch_results(results: dict[str, dict], errors: list[BaseException]) -> None:
+    assert not errors, errors
+    assert results["first"]["rows_staged"] == 4
+    assert results["first"]["rows_inserted"] == 4
+    assert results["second"]["rows_staged"] == 3
+    assert results["second"]["rows_inserted"] == 2
+    assert results["second"]["rows_updated"] == 1
+    assert results["second"]["fact_rows_after"] == 6
 
 
 def test_overlapping_batches_cannot_replace_staging_before_upsert(
@@ -101,10 +111,4 @@ def test_overlapping_batches_cannot_replace_staging_before_upsert(
             second.join(timeout=10)
 
     assert not first.is_alive() and not second.is_alive()
-    assert not errors, errors
-    assert results["first"]["rows_staged"] == 4
-    assert results["first"]["rows_inserted"] == 4
-    assert results["second"]["rows_staged"] == 3
-    assert results["second"]["rows_inserted"] == 2
-    assert results["second"]["rows_updated"] == 1
-    assert results["second"]["fact_rows_after"] == 6
+    assert_isolated_batch_results(results, errors)
