@@ -12,8 +12,8 @@ Design notes for anyone reading this DAG:
   called inside each task, never at module level. A DAG file that connects to
   a database while being parsed will break the scheduler, which re-parses every
   file on a loop.
-* **Each task is independently retryable.** Staging is truncated before every
-  load, the upsert is keyed on the natural key, and the aggregate is rebuilt in
+* **Each task is independently retryable.** COPY and upsert share one transaction,
+  the upsert is keyed on the natural key, and the aggregate is rebuilt in
   full, so re-running any task after a failure is safe.
 * **The watermark advances last**, only after the quality checks pass, so a bad
   run is retried from the same position rather than silently skipping data.
@@ -90,24 +90,16 @@ def congress_demographics_etl() -> None:
         return step_extract(Config.from_env(), dag_run_id=run_id)
 
     @task
-    def load_staging(extracted: dict) -> dict:
-        """Truncate staging and COPY the staged CSV into PostgreSQL."""
+    def load_and_upsert(extracted: dict) -> dict:
+        """COPY and upsert atomically so overlapping runs cannot mix batches."""
         from etl.config import Config
-        from etl.pipeline import step_load_staging
+        from etl.pipeline import step_load_and_upsert
 
-        return step_load_staging(
+        return step_load_and_upsert(
             Config.from_env(),
             batch_id=extracted["batch_id"],
             staged_path=extracted["staged_path"],
         )
-
-    @task
-    def upsert(staged: dict) -> dict:
-        """Idempotent upsert from staging into analytics.member_term."""
-        from etl.config import Config
-        from etl.pipeline import step_upsert
-
-        return step_upsert(Config.from_env(), batch_id=staged["batch_id"])
 
     @task
     def build_analytics(_upserted: dict) -> dict:
@@ -140,8 +132,7 @@ def congress_demographics_etl() -> None:
 
     schema = ensure_schema()
     extracted = extract(schema)
-    staged = load_staging(extracted)
-    upserted = upsert(staged)
+    upserted = load_and_upsert(extracted)
     analytics = build_analytics(upserted)
     quality = data_quality(extracted, analytics)
     advance_watermark(extracted, quality)
