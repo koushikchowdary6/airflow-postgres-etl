@@ -110,9 +110,19 @@ def extract_file(
 
             # Cheap pre-filter: skip old Congresses before full validation.
             raw_congress = (row.get("congress") or "").strip()
-            if min_congress is not None and raw_congress.isdigit() and int(raw_congress) < min_congress:
-                result.rows_skipped_by_watermark += 1
-                continue
+            if min_congress is not None and raw_congress.isdigit():
+                # isdigit() includes characters such as superscript ² that
+                # int() cannot parse. Extremely long decimal strings can also
+                # exceed Python's integer conversion limit. Leave both to
+                # parse_row() so they become auditable rejects, not crashes.
+                try:
+                    congress_number = int(raw_congress)
+                except ValueError:
+                    pass
+                else:
+                    if congress_number < min_congress:
+                        result.rows_skipped_by_watermark += 1
+                        continue
 
             try:
                 record = parse_row(row, row_number, today=horizon)
