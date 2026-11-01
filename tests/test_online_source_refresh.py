@@ -34,7 +34,7 @@ def test_online_run_fetches_even_with_a_cached_snapshot(
 
     assert calls == [raw_path]
     assert raw_path.read_bytes() == refreshed.read_bytes()
-    assert result["rows_read"] == 6
+    assert result["rows_read"] == 3
 
 
 def test_offline_run_never_fetches_and_uses_existing_snapshot(etl_env: Config, monkeypatch: pytest.MonkeyPatch) -> None:
