@@ -61,12 +61,17 @@ def step_extract(
     spec = AGING_CONGRESS
     raw_path = config.raw_dir / spec.filename
 
-    if not raw_path.exists():
-        if offline:
+    if offline:
+        if not raw_path.exists():
             raise FileNotFoundError(
                 f"{raw_path} is missing and --offline was given. Download it first "
                 f"(python -m etl.cli fetch), or place the CSV at that path. See docs/DATASETS.md."
             )
+    else:
+        # A daily online DAG must fetch a fresh upstream snapshot even when a
+        # previous run left a local cache. fetch() validates and atomically
+        # publishes the new file, preserving the last-good copy on failure.
+        # Never silently load stale cached data after a failed refresh.
         fetch(spec, raw_path)
 
     with transaction(config) as cursor:
