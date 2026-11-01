@@ -73,7 +73,9 @@ def extract_file(
     deduped: dict[tuple[int, str], MemberTerm] = {}
 
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        reader = csv.DictReader(handle)
+        # Offline snapshots bypass fetch()'s strict syntax check. Reject malformed
+        # quoted records here too, before partial data can reach staging.
+        reader = csv.DictReader(handle, strict=True)
         validate_header(reader.fieldnames, spec.required_columns)
         for offset, row in enumerate(reader):
             # Row 1 is the header, so data rows start at 2 - the number a
