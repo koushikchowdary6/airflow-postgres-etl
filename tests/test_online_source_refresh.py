@@ -37,9 +37,7 @@ def test_online_run_fetches_even_with_a_cached_snapshot(
     assert result["rows_read"] == 6
 
 
-def test_offline_run_never_fetches_and_uses_existing_snapshot(
-    etl_env: Config, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_offline_run_never_fetches_and_uses_existing_snapshot(etl_env: Config, monkeypatch: pytest.MonkeyPatch) -> None:
     raw_path = etl_env.raw_dir / "aging_congress.csv"
     before = raw_path.read_bytes()
 
