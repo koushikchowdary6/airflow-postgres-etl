@@ -93,6 +93,12 @@ Two details that matter more than the box count:
   before atomic publication. Oversized, interrupted, empty, or malformed
   downloads leave the last-good raw snapshot untouched. This bounds response
   buffering, not downstream parser memory or total process memory.
+- **Online runs refresh the upstream CSV on every execution**, including when a
+  previous raw snapshot exists. This lets the daily DAG ingest newly published
+  rows and late corrections rather than silently reusing an old download.
+  A failed refresh stops the run without loading stale data; the last-good
+  snapshot is retained for investigation or an explicit `--offline` rerun.
+  Offline mode never accesses the network and requires a local source file.
 
 ## Quickstart
 
