@@ -54,9 +54,7 @@ def spec():
     ],
 )
 @pytest.mark.parametrize("had_previous", [True, False])
-def test_inconsistent_or_malformed_length_never_publishes(
-    tmp_path: Path, monkeypatch, spec, header, had_previous
-):
+def test_inconsistent_or_malformed_length_never_publishes(tmp_path: Path, monkeypatch, spec, header, had_previous):
     destination = tmp_path / "data.csv"
     previous = b"id\nlast-good\n"
     if had_previous:
