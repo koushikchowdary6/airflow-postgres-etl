@@ -103,6 +103,26 @@ def _validate_staged_csv(path: Path, spec: SourceSpec) -> None:
             ) from exc
 
 
+def _identity_content_length(response, name: str) -> int | None:
+    """Validate an identity-encoded HTTP body length before snapshot publication.
+
+    requests yields decoded bytes for compressed bodies, so their wire
+    Content-Length must not be compared with the bytes written to disk.
+    """
+    headers = getattr(response, "headers", {})
+    if headers.get("Content-Encoding", "").strip().lower() not in {"", "identity"}:
+        return None
+    value = headers.get("Content-Length")
+    if value is None:
+        return None
+    if not isinstance(value, str) or len(value) > 20 or not value.isascii() or not value.isdecimal():
+        raise RuntimeError(f"Downloaded source {name} has invalid Content-Length; previous snapshot preserved")
+    length = int(value)
+    if length > MAX_SOURCE_BYTES:
+        raise RuntimeError(f"Downloaded source {name} exceeds maximum size; previous snapshot preserved")
+    return length
+
+
 def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SECONDS) -> Path:
     """Stream, validate, and atomically publish a complete source CSV.
 
@@ -132,30 +152,7 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
                     f"Downloaded source {spec.name} returned HTTP {status_code}; "
                     "expected a complete HTTP 200 response; previous snapshot preserved"
                 )
-            # requests.iter_content() normally validates HTTP framing, but
-            # verify an identity-encoded Content-Length independently before
-            # replacing an offline snapshot. Compressed bodies are decoded by
-            # requests, so their wire lengths are not comparable to these bytes.
-            headers = getattr(response, "headers", {})
-            content_encoding = headers.get("Content-Encoding", "").strip().lower()
-            length_header = headers.get("Content-Length")
-            expected_bytes = None
-            if length_header is not None and content_encoding in {"", "identity"}:
-                if (
-                    not isinstance(length_header, str)
-                    or len(length_header) > 20
-                    or not length_header.isascii()
-                    or not length_header.isdecimal()
-                ):
-                    raise RuntimeError(
-                        f"Downloaded source {spec.name} has invalid Content-Length; "
-                        "previous snapshot preserved"
-                    )
-                expected_bytes = int(length_header)
-                if expected_bytes > MAX_SOURCE_BYTES:
-                    raise RuntimeError(
-                        f"Downloaded source {spec.name} exceeds maximum size; previous snapshot preserved"
-                    )
+            expected_bytes = _identity_content_length(response, spec.name)
         except requests.RequestException as exc:
             raise RuntimeError(
                 f"Could not download {spec.name} from {spec.url}: {exc}. "
