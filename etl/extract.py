@@ -77,10 +77,13 @@ def extract_file(
         # quoted records here too, before partial data can reach staging.
         reader = csv.DictReader(handle, strict=True)
         validate_header(reader.fieldnames, spec.required_columns)
-        for offset, row in enumerate(reader):
-            # Row 1 is the header, so data rows start at 2 - the number a
-            # person sees when they open the file to investigate a reject.
-            row_number = offset + 2
+        for row in reader:
+            # DictReader counts logical records, not physical CSV lines.
+            # A quoted multiline field or a blank line can shift later
+            # rejects away from their actual location in the source file.
+            # Report the physical line where the record ends (the precise
+            # location csv.reader exposes), including for malformed rows.
+            row_number = reader.line_num
             result.rows_read += 1
 
             # DictReader stores surplus fields under the None key. Ignoring
