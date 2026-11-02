@@ -83,9 +83,7 @@ def test_exact_identity_length_allows_complete_snapshot(tmp_path: Path, monkeypa
     assert response.closed and response.streamed
 
 
-def test_compressed_wire_length_is_not_compared_to_decoded_body(
-    tmp_path: Path, monkeypatch, spec
-):
+def test_compressed_wire_length_is_not_compared_to_decoded_body(tmp_path: Path, monkeypatch, spec):
     destination = tmp_path / "data.csv"
     response = Response({"Content-Encoding": "gzip", "Content-Length": "2"})
     monkeypatch.setattr(requests, "get", lambda *args, **kwargs: response)
