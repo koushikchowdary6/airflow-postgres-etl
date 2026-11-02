@@ -74,7 +74,7 @@ AGING_CONGRESS = SourceSpec(
 
 
 def _validate_staged_csv(path: Path, spec: SourceSpec) -> None:
-    """Validate the complete downloaded CSV before publishing it."""
+    """Validate complete CSV framing and record widths before publishing it."""
     with path.open("r", encoding="utf-8-sig", newline="") as stream:
         reader = csv.reader(stream, strict=True)
         try:
@@ -85,7 +85,16 @@ def _validate_staged_csv(path: Path, spec: SourceSpec) -> None:
                 f"Downloaded source {spec.name} has an invalid CSV header; previous snapshot preserved"
             ) from exc
         try:
-            row_count = sum(bool(row) for row in reader)
+            row_count = 0
+            for row in reader:
+                if not row:
+                    continue
+                if len(row) != len(header):
+                    raise ValueError(
+                        f"CSV record at physical line {reader.line_num} has "
+                        "a different number of fields than its header"
+                    )
+                row_count += 1
             if row_count < spec.minimum_rows:
                 raise ValueError(f"CSV has {row_count} data rows; expected at least {spec.minimum_rows}")
         except (UnicodeDecodeError, csv.Error, ValueError) as exc:
