@@ -29,15 +29,17 @@ class Response:
 
 @pytest.mark.parametrize("status_code", [202, 206, 304])
 @pytest.mark.parametrize("previous", [True, False])
-def test_non_complete_http_response_never_publishes_snapshot(
-    tmp_path: Path, monkeypatch, status_code, previous
-):
+def test_non_complete_http_response_never_publishes_snapshot(tmp_path: Path, monkeypatch, status_code, previous):
     destination = tmp_path / "source.csv"
     if previous:
         destination.write_bytes(b"id\nlast-good\n")
     spec = SourceSpec(
-        name="fixture", description="test", url="https://example.test/data.csv",
-        filename="source.csv", required_columns=("id",), attribution="test",
+        name="fixture",
+        description="test",
+        url="https://example.test/data.csv",
+        filename="source.csv",
+        required_columns=("id",),
+        attribution="test",
     )
     # A complete-looking CSV is still not evidence that a 206 fragment is
     # the full upstream object. Status must be checked before streaming.
