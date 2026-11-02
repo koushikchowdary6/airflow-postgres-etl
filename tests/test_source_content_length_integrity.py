@@ -42,14 +42,17 @@ def spec():
     )
 
 
-@pytest.mark.parametrize("header", [
-    "1",
-    "999",
-    "-1",
-    "1, 2",
-    "invalid",
-    "9" * 30,
-])
+@pytest.mark.parametrize(
+    "header",
+    [
+        "1",
+        "999",
+        "-1",
+        "1, 2",
+        "invalid",
+        "9" * 30,
+    ],
+)
 @pytest.mark.parametrize("had_previous", [True, False])
 def test_inconsistent_or_malformed_length_never_publishes(
     tmp_path: Path, monkeypatch, spec, header, had_previous
