@@ -114,6 +114,15 @@ def fetch(spec: SourceSpec, destination: Path, *, timeout: int = HTTP_TIMEOUT_SE
         try:
             response = requests.get(spec.url, timeout=timeout, stream=True)
             response.raise_for_status()
+            # raise_for_status() accepts 206 Partial Content and other non-error
+            # statuses. A syntactically valid fragment could otherwise replace
+            # the last complete snapshot and advance the ETL watermark.
+            status_code = getattr(response, "status_code", 200)
+            if status_code != 200:
+                raise RuntimeError(
+                    f"Downloaded source {spec.name} returned HTTP {status_code}; "
+                    "expected a complete HTTP 200 response; previous snapshot preserved"
+                )
         except requests.RequestException as exc:
             raise RuntimeError(
                 f"Could not download {spec.name} from {spec.url}: {exc}. "
